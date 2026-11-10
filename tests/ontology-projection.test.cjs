@@ -133,6 +133,7 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
         approved: true,
         evidence: relation,
         quote: "depends on the rehearsal slot",
+        knownAt: "2026-01-01T10:06:00Z",
       },
     ],
     asOf = "2026-01-01T12:30:00Z";
@@ -312,7 +313,11 @@ test("rejects dangling, cross-scope, cyclic revisions and preserves concurrent u
       scope,
       source,
       versionId: "v",
-      item: { id: "m", time: "2026-01-01T09:00:00Z" },
+      item: {
+        id: "m",
+        text: "synthetic evidence",
+        time: "2026-01-01T09:00:00Z",
+      },
     };
   const review = (id, kind, revises) => ({
     id,
@@ -422,6 +427,7 @@ test("inactive revisions without times stay structural and manual corrections do
         versionId: "v-" + id,
         item: {
           id,
+          text: "synthetic " + id,
           ...(id === "root" ? { time: "2026-01-01T09:00:00Z" } : {}),
           ...(id === "relation"
             ? { text: "The task depends on the decision." }
@@ -507,4 +513,184 @@ test("inactive revisions without times stay structural and manual corrections do
     rebuildProjection({ archive, scope, asOf, dependencies: [] }),
     /not independent/,
   );
+});
+test("dependency effective time and historical knowledge remain separate", async () => {
+  const scope = { owner: "o", project: "p" },
+    source = { harness: "h", instance: "i", session: "s" };
+  const ref = (id) => ({ id, revision: "v-" + id, source });
+  const records = new Map(
+    ["decision", "task", "relation"].map((id) => [
+      id,
+      {
+        scope,
+        source,
+        versionId: "v-" + id,
+        item: {
+          id,
+          text:
+            id === "relation"
+              ? "The relation is effective from 10:00."
+              : "synthetic " + id,
+          time:
+            id === "relation" ? "2026-01-01T10:05:00Z" : "2026-01-01T10:00:00Z",
+        },
+      },
+    ]),
+  );
+  const reviews = [
+    { id: "d", scope, kind: "decision", text: "slot", target: ref("decision") },
+    { id: "t", scope, kind: "todo", text: "checklist", target: ref("task") },
+  ];
+  const archive = {
+    listAnnotations: async () => reviews,
+    getItem: async ({ id }) => records.get(id) || null,
+  };
+  const sidecar = {
+    id: "dep",
+    scope,
+    taskId: "t",
+    decisionId: "d",
+    approved: true,
+    evidence: ref("relation"),
+  };
+  const build = async (asOf, dependency = sidecar) =>
+    rebuildProjection({ archive, scope, asOf, dependencies: [dependency] });
+  const early = await build("2026-01-01T10:02:00Z");
+  assert.equal(
+    early.edges.find((e) => e.kind === "DEPENDS_ON").effectiveAtBasis,
+    "evidence-time",
+  );
+  assert.equal(
+    answerDependency({
+      projection: early,
+      decisionRootId: "d",
+      mode: "current-known",
+    }).tasks.length,
+    0,
+  );
+  const retro = await build("2026-01-01T10:02:00Z", {
+    ...sidecar,
+    effectiveAt: "2026-01-01T10:00:00Z",
+    knownAt: "2026-01-01T10:05:00Z",
+  });
+  assert.equal(
+    retro.edges.find((e) => e.kind === "DEPENDS_ON").effectiveAtBasis,
+    "explicit",
+  );
+  assert.equal(
+    answerDependency({
+      projection: retro,
+      decisionRootId: "d",
+      mode: "current-known",
+    }).tasks.length,
+    1,
+  );
+  assert.equal(
+    answerDependency({
+      projection: retro,
+      decisionRootId: "d",
+      mode: "current-known",
+      knowledgeCutoff: "2026-01-01T10:02:00Z",
+    }).tasks.length,
+    0,
+  );
+  assert.equal(
+    answerDependency({ projection: retro, decisionRootId: "d" }).tasks.length,
+    0,
+  );
+  const unknown = await build("2026-01-01T10:06:00Z");
+  assert.equal(
+    answerDependency({ projection: unknown, decisionRootId: "d" }).reason,
+    "dependency observation time unavailable",
+  );
+  assert.equal(
+    answerDependency({
+      projection: unknown,
+      decisionRootId: "d",
+      mode: "current-known",
+    }).tasks.length,
+    1,
+  );
+  await assert.rejects(
+    build("2026-01-01T10:06:00Z", {
+      ...sidecar,
+      knownAt: "2026-01-01T10:02:00Z",
+    }),
+    /precedes evidence/,
+  );
+  records.get("relation").item.time = undefined;
+  const noTime = await build("2026-01-01T10:06:00Z");
+  assert.equal(
+    answerDependency({
+      projection: noTime,
+      decisionRootId: "d",
+      mode: "current-known",
+    }).reason,
+    "dependency effective time unavailable",
+  );
+});
+test("rejects blank or explicitly incomplete exact evidence", async () => {
+  const scope = { owner: "o", project: "p" },
+    source = { harness: "h", instance: "i", session: "s" },
+    asOf = "2026-01-01T12:00:00Z";
+  const ref = (id) => ({ id, revision: "v-" + id, source });
+  const records = new Map(
+    ["decision", "task", "relation"].map((id) => [
+      id,
+      {
+        scope,
+        source,
+        versionId: "v-" + id,
+        item: { id, text: "valid", time: "2026-01-01T10:00:00Z" },
+      },
+    ]),
+  );
+  const reviews = [
+    {
+      id: "d",
+      scope,
+      kind: "decision",
+      text: "approved",
+      target: ref("decision"),
+    },
+    { id: "t", scope, kind: "todo", text: "task", target: ref("task") },
+  ];
+  const archive = {
+    listAnnotations: async () => reviews,
+    getItem: async ({ id }) => records.get(id) || null,
+  };
+  const dependencies = [
+    {
+      id: "dep",
+      scope,
+      taskId: "t",
+      decisionId: "d",
+      approved: true,
+      evidence: ref("relation"),
+    },
+  ];
+  for (const invalid of [
+    {},
+    { text: "" },
+    { text: "   " },
+    { text: "preview", truncated: true },
+    { text: "preview", metadata: { preview: true } },
+    { text: "preview", metadata: { preview: { length: 4 } } },
+    { text: "preview", metadata: { incomplete: true } },
+  ]) {
+    const old = records.get("decision").item;
+    records.get("decision").item = { id: "decision", ...invalid };
+    await assert.rejects(
+      rebuildProjection({ archive, scope, asOf, dependencies }),
+      /missing or incomplete/,
+    );
+    records.get("decision").item = old;
+    const relation = records.get("relation").item;
+    records.get("relation").item = { id: "relation", ...invalid };
+    await assert.rejects(
+      rebuildProjection({ archive, scope, asOf, dependencies }),
+      /missing or incomplete/,
+    );
+    records.get("relation").item = relation;
+  }
 });

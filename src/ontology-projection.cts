@@ -19,6 +19,15 @@ type Version = {
     text?: string;
     time?: string;
     timestamp?: string;
+    truncated?: unknown;
+    preview?: unknown;
+    metadata?: {
+      truncated?: unknown;
+      preview?: unknown;
+      isPreview?: unknown;
+      incomplete?: unknown;
+      complete?: unknown;
+    };
   };
 };
 type Review = {
@@ -42,6 +51,8 @@ type Dependency = {
   approved: true;
   evidence: Citation;
   quote?: string;
+  effectiveAt?: string;
+  knownAt?: string;
 };
 type Node = {
   id: string;
@@ -60,6 +71,9 @@ type Edge = {
   to: string;
   evidence?: SourceRevision;
   effectiveAt?: string | null;
+  evidenceAt?: string | null;
+  knownAt?: string | null;
+  effectiveAtBasis?: "explicit" | "evidence-time" | "unknown";
 };
 type Projection = {
   scope: Scope;
@@ -194,6 +208,21 @@ async function rebuildProjection({
       !nonempty(version.source.session)
     )
       throw new Error("Dangling or cross-scope source revision");
+    const item = version.item,
+      meta = item.metadata;
+    const marked = (value: unknown) =>
+      value !== undefined && value !== null && value !== false;
+    if (
+      !nonempty(item.text) ||
+      marked(item.truncated) ||
+      marked(item.preview) ||
+      marked(meta?.truncated) ||
+      marked(meta?.isPreview) ||
+      marked(meta?.incomplete) ||
+      meta?.complete === false ||
+      marked(meta?.preview)
+    )
+      throw new Error("Evidence text missing or incomplete");
     if (
       ref.source &&
       (ref.source.harness !== version.source.harness ||
@@ -371,13 +400,29 @@ async function rebuildProjection({
       )
         throw new Error("Dependency quote not found in evidence");
     }
+    const evidenceAt =
+      relation.version.item.time || relation.version.item.timestamp || null;
+    if (evidenceAt !== null) timestamp(evidenceAt);
+    if (d.effectiveAt !== undefined) timestamp(d.effectiveAt);
+    if (d.knownAt !== undefined) timestamp(d.knownAt);
+    if (evidenceAt && d.knownAt && timestamp(d.knownAt) < timestamp(evidenceAt))
+      throw new Error("Dependency known time precedes evidence");
+    const effectiveAt = d.effectiveAt || evidenceAt;
     edges.push({
       kind: "DEPENDS_ON",
       id: d.id,
       from: task.id,
       to: decision.id,
       evidence: relation.ref,
-      effectiveAt: task.effectiveAt,
+      evidenceAt,
+      effectiveAt,
+      effectiveAtBasis:
+        d.effectiveAt !== undefined
+          ? "explicit"
+          : evidenceAt
+            ? "evidence-time"
+            : "unknown",
+      knownAt: d.knownAt || null,
     });
   }
   // Filter by time at query time: retaining future nodes preserves provenance.
@@ -399,10 +444,12 @@ function answerDependency({
   projection,
   decisionRootId,
   mode = "as-of",
+  knowledgeCutoff,
 }: {
   projection: Projection;
   decisionRootId: string;
   mode?: "as-of" | "current-known";
+  knowledgeCutoff?: string;
 }) {
   if (mode !== "as-of" && mode !== "current-known")
     throw new Error("Invalid correction mode");
@@ -411,6 +458,12 @@ function answerDependency({
   );
   if (!root) throw new Error("Decision root not found");
   const at = timestamp(projection.asOf),
+    cutoff =
+      knowledgeCutoff !== undefined
+        ? timestamp(knowledgeCutoff)
+        : mode === "as-of"
+          ? at
+          : null,
     edges = projection.edges.filter((e) => e.kind === "SUPERSEDES");
   const descendant = (n: Node) => {
     let id = n.id;
@@ -454,7 +507,7 @@ function answerDependency({
   const corrections = projection.corrections.filter(
     (c) => c.target === selected.id,
   );
-  if (corrections.length && mode === "as-of")
+  if (corrections.length && (mode === "as-of" || knowledgeCutoff !== undefined))
     return {
       status: "ambiguous",
       reason: "correction effective time unavailable",
@@ -462,40 +515,51 @@ function answerDependency({
   if (corrections.length > 1)
     return { status: "ambiguous", reason: "multiple corrections" };
   const correction = corrections[0];
-  const tasks = projection.edges
+  const relevantDependencies = projection.edges
     .filter((e) => e.kind === "DEPENDS_ON" && e.to === root.id)
+    .filter((e) => {
+      const task = projection.nodes.find((n) => n.id === e.from);
+      return task && task.lifecycle === "active" && task.basis === "confirmed";
+    });
+  for (const e of relevantDependencies) {
+    const task = projection.nodes.find((n) => n.id === e.from);
+    if (!task || !task.effectiveAt)
+      return { status: "ambiguous", reason: "task effective time unavailable" };
+    if (timestamp(task.effectiveAt) > at) continue;
+    if (!e.effectiveAt)
+      return {
+        status: "ambiguous",
+        reason: "dependency effective time unavailable",
+      };
+    if (timestamp(e.effectiveAt) > at) continue;
+    if (cutoff !== null && !e.knownAt)
+      return {
+        status: "ambiguous",
+        reason: "dependency observation time unavailable",
+      };
+  }
+  const tasks = relevantDependencies
     .flatMap((e) => {
       const task = projection.nodes.find((n) => n.id === e.from);
-      if (!task || task.lifecycle !== "active" || task.basis !== "confirmed")
+      if (
+        !task ||
+        !task.effectiveAt ||
+        !e.effectiveAt ||
+        timestamp(task.effectiveAt) > at ||
+        timestamp(e.effectiveAt) > at ||
+        (cutoff !== null && (!e.knownAt || timestamp(e.knownAt) > cutoff))
+      )
         return [];
-      if (!task.effectiveAt) return [];
-      return timestamp(task.effectiveAt) <= at
-        ? [
-            {
-              id: task.id,
-              text: task.text,
-              evidence: task.evidence,
-              relationEvidence: e.evidence,
-            },
-          ]
-        : [];
+      return [
+        {
+          id: task.id,
+          text: task.text,
+          evidence: task.evidence,
+          relationEvidence: e.evidence,
+        },
+      ];
     })
     .sort(byId);
-  if (
-    projection.edges.some(
-      (e) =>
-        e.kind === "DEPENDS_ON" &&
-        e.to === root.id &&
-        projection.nodes.some(
-          (n) =>
-            n.id === e.from &&
-            n.lifecycle === "active" &&
-            n.basis === "confirmed" &&
-            n.effectiveAt === null,
-        ),
-    )
-  )
-    return { status: "ambiguous", reason: "task effective time unavailable" };
   return {
     status: "resolved",
     decision: {

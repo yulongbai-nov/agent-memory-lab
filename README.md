@@ -5,6 +5,7 @@
 - [记忆数据契约 v0.1](spec/contract-v0.1.md)：事件、来源、纠正、状态和验收边界。
 - [JSON Schema](spec/event.schema.json)、[正例](examples/synthetic.json)、[反例](examples/invalid-cases.json)。
 - [设计决定与开放问题](spec/design-decisions.md)。
+- [OntoSmith 复用评估](spec/research/ontosmith-reuse.md)，按固定官方提交核对类型、证据、图投影与同步边界。
 - [可复用的离线同步技能](skills/couchdb-offline-sync/SKILL.md)。
 - [CouchDB/PouchDB 同步实验](benchmark/couchdb-sync/README.md)。
 

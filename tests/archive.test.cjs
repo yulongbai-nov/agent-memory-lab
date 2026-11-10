@@ -81,3 +81,21 @@ test('review links bind correction to exact evidence and reject invalid changes'
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'change',text:'fix',target,revises:'c'}),/invalid/);
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'decision',text:'fix',target,valid_time:'tomorrow'}),/valid_time/);
 });
+
+test('same-position coverage CAS rejects an older overlapping scan', async t => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-coverage-cas-'));
+  t.after(() => fs.rm(dir, {recursive: true, force: true}));
+  const archive = await openArchive({dir});
+  const { checkpointRevision } = require('../lib/checkpoint.cjs');
+  const scope = {owner: 'synthetic', project: 'cas'};
+  const source = {harness: 'test', instance: 'local', session: 'one'};
+  const original = { ...source, coverage: { gaps: ['prior'] } };
+  await archive.importBatch({scope, source: original, checkpoint: {position: 8}, items: []});
+  const stale = await archive.getCheckpoint({...scope, ...source});
+  const checkpoint = {previous: 8, previousRevision: checkpointRevision(stale), position: 8};
+  await archive.importBatch({scope, source: {...source, coverage: {gaps: []}}, checkpoint, items: []});
+  await assert.rejects(archive.importBatch({
+    scope, source: {...source, coverage: {gaps: ['prior', 'stale']}}, checkpoint, items: []
+  }), /Checkpoint revision conflict/);
+  assert.deepEqual((await archive.getCheckpoint({...scope, ...source})).source.coverage.gaps, []);
+});

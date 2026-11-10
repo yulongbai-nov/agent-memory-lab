@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtemp, readdir, rm } = require('node:fs/promises');
+const { mkdtemp, readdir, rm, readFile, writeFile } = require('node:fs/promises');
 const { join } = require('node:path');
 const { tmpdir } = require('node:os');
 const { runSynthetic } = require('../lib/semantic-demo.cjs');
@@ -54,4 +54,27 @@ test('private semantic queue exposes counts without including previews', () => {
     semanticStatus: 'requires-user-consent', semanticItemsPending: 1, previewBytes: 14, modelCalls: 0
   });
   assert(!JSON.stringify(result).includes('private sample'));
+});
+
+test('injected runtime cannot poison the production namespace and provenance is checked', async t => {
+  const cacheDir = await mkdtemp(join(tmpdir(), 'memory-provenance-')); t.after(() => rm(cacheDir,{recursive:true,force:true}));
+  const usage = {input_tokens:1,cached_input_tokens:0,output_tokens:1};
+  await assert.rejects(runSynthetic({invoke:async()=>{throw new Error('must not run')}}),/explicit private cache/);
+  const invoke=async()=>({output:{candidates:[]},usage});
+  const mock=await runSynthetic({cacheDir,invoke}); assert.equal(mock.runtime,'injected-test');
+  const mockFile=(await readdir(cacheDir)).find(name=>name.endsWith('.json'));
+  const entry=JSON.parse(await readFile(join(cacheDir,mockFile),'utf8'));
+  assert.equal(entry.metadata.runtime,'injected-test');
+  const productionMetadata={...entry.metadata,runtime:'codex-cli'};
+  const {createHash}=require('node:crypto');
+  const productionKey=createHash('sha256').update(JSON.stringify(productionMetadata)).digest('hex');
+  assert.notEqual(mockFile,productionKey+'.json');
+  // Fabricate a separately stamped production cache fixture; this test never launches a model.
+  const productionPath=join(cacheDir,productionKey+'.json');
+  await writeFile(productionPath,JSON.stringify({metadata:productionMetadata,output:{candidates:[]},usage}),{mode:0o600});
+  const hit=await runSynthetic({cacheDir}); assert.equal(hit.runtime,'codex-cli'); assert.equal(hit.cacheHit,true); assert.equal(hit.requestedModel,'gpt-6-luna'); assert.equal(hit.requestedEffort,'low');
+  await writeFile(productionPath,JSON.stringify({metadata:entry.metadata,output:entry.output,usage}),{mode:0o600});
+  await assert.rejects(runSynthetic({cacheDir}),/provenance mismatch/);
+  await writeFile(productionPath,JSON.stringify({output:entry.output,usage}),{mode:0o600});
+  await assert.rejects(runSynthetic({cacheDir}),/provenance mismatch/);
 });

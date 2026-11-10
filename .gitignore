@@ -15,3 +15,10 @@ derived/
 memory-lab-private/
 originals/
 intake-*.json*
+.writer-*.sqlite*
+.marker-*.tmp
+historical-backfill-pass-*.json*
+archive.sqlite3*
+archive-export.json
+.sqlite-migration-*.tmp*
+collector-*.json*

@@ -130,6 +130,26 @@ const collect = async iterable => { const batches = []; for await (const b of it
     await collect(readDsh({...base,file:rawCompressed,captureOriginal:async ({bytes}) => {compressedCaptured.push(bytes); return {locator:'blob'};}}));
     assert.deepEqual(compressedCaptured[0],rawBytes);
     await assert.rejects(collect(readDsh({...base,file:rawFile,captureOriginal:async () => { throw new Error('capture failed'); }})),/capture failed/);
+    const headerFile = path.join(dir, 'header.jsonl');
+    const header = {type:'session',version:4,createdAt:123456,cwd:'/Users/example/private',delegationDepth:0,id:'native-session',isSeeded:false,origin:'local'};
+    const headerBytes = Buffer.from(JSON.stringify(header) + '\r\n');
+    await fs.promises.writeFile(headerFile,Buffer.concat([headerBytes,Buffer.from(JSON.stringify({type:'message',seq:1,data:{role:'user',text:'hello'}})+'\n')]));
+    const capturedHeader = [];
+    const cb = async ({bytes}) => {capturedHeader.push(bytes); return {availability:'captured',locator:'blob'};};
+    const firstHeader = await collect(readDsh({...base,file:headerFile,captureOriginal:cb}));
+    const headerItem = firstHeader.flatMap(b => b.items)[0];
+    assert.equal(headerItem.kind,'source_metadata');
+    assert.equal(headerItem.text,undefined);
+    assert(!JSON.stringify(headerItem).includes('/Users/example'));
+    assert.deepEqual(capturedHeader[0],headerBytes);
+    const sourceWithGap = {...firstHeader.at(-1).source,coverage:{...firstHeader.at(-1).source.coverage,gaps:[{coordinate:1,reason:'unsupported-record-shape'},{coordinate:8,reason:'invalid-json'}]}};
+    const repairedHeader = await collect(readDsh({...base,file:headerFile,checkpoint:{position:2,source:sourceWithGap},lookback:0,maxRecords:2,captureOriginal:cb}));
+    assert(repairedHeader.flatMap(b => b.items).some(item => item.id === headerItem.id && item.kind === 'source_metadata'));
+    assert(!repairedHeader.at(-1).source.coverage.gaps.some(g => g.coordinate === 1 && g.reason === 'unsupported-record-shape'));
+    assert(repairedHeader.at(-1).source.coverage.gaps.some(g => g.coordinate === 8));
+    await fs.promises.writeFile(headerFile,JSON.stringify({...header,version:5})+'\n');
+    const unsupportedHeader = await collect(readDsh({...base,file:headerFile,captureOriginal:cb}));
+    assert(unsupportedHeader.at(-1).source.coverage.gaps.some(g => g.coordinate === 1 && g.reason === 'unsupported-record-shape'));
     console.log('adapter tests passed');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

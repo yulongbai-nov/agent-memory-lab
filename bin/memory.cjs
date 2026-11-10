@@ -26,6 +26,8 @@ Commands:
   evidence --id ID --revision VERSION --source dsh|codex --instance INSTANCE --session SESSION
   verify-original --id ID --revision VERSION
   coverage
+  migrate-index
+  export-index
   annotate --target CITATION_JSON --kind note|correction|decision|change|todo --text TEXT [--id RETRY_ID]
   watch --manifest PRIVATE_JSON [--interval SECONDS] [--runs N]
   semantic-status
@@ -55,12 +57,21 @@ async function ingest(op, options) {
   for await (const batch of read({
     ...source, file: options.file, checkpoint, captureOriginal: originalCapture(op.archive.dir),
     maxRecords: positiveInt(options['max-records'], 100000) || 3000,
-    batchSize: positiveInt(options['batch-size'], 500) || 100
+    batchSize: positiveInt(options['batch-size'], 500) || 100,
+    lookback: options.collectorLookback
   })) {
+    if (options.collectorLookback !== undefined && Buffer.byteLength(JSON.stringify(batch)) > 8 * 1024 * 1024) {
+      throw Object.assign(new Error('Collector batch exceeds its byte budget'), {code: 'COLLECTOR_BATCH_LIMIT'});
+    }
     const result = await op.archive.importBatch(batch);
     stats.batches++;
     stats.itemsImported += result.imported || 0;
     stats.batchesReplayed += Number(Boolean(result.replayed));
+  }
+  if (options.collectorLookback !== undefined) {
+    const end = await op.archive.getCheckpoint({ ...op.scope, ...sourceIdentity(source) });
+    stats.progressed = (end?.position || 0) > (checkpoint?.position || 0);
+    stats.partial = Boolean(end?.source?.coverage?.gaps?.some(g => g.reason === 'scan-limit'));
   }
   return stats;
 }
@@ -86,7 +97,9 @@ async function main() {
   if (values.help || !command) return usage();
   if (extra.length) throw new Error('Unexpected positional argument.');
   const { operations } = require('../lib/operations.cjs');
-  const op = await operations({ ...values, readOnly: command === 'semantic-status' || (command === 'mcp' && !values['allow-annotations']) });
+  const readCommands = ['find', 'timeline', 'current', 'evidence', 'coverage', 'verify-original', 'semantic-status'];
+  const readOnly = readCommands.includes(command) || (command === 'mcp' && !values['allow-annotations']);
+  const op = await operations({ ...values, readOnly });
   const selection = { ...values, limit: positiveInt(values.limit, 100), offset: positiveInt(values.offset, 10000), harness: values.source };
   if (values.source && values.instance && values.session) selection.source = { harness: values.source, instance: values.instance, session: values.session };
   else delete selection.source;
@@ -105,9 +118,18 @@ async function main() {
       break;
     }
     case 'coverage': result = await op.coverage(); break;
+    case 'migrate-index':
+      result = await require('../lib/storage-sqlite.cjs').migrateJsonToSqlite({dir:op.archive.dir});
+      break;
+    case 'export-index': {
+      const { exportSqliteToJson } = require('../lib/storage-sqlite.cjs');
+      const { file, ...counts } = await exportSqliteToJson({dir:op.archive.dir});
+      result = { ...counts, file: 'archive-export.json' };
+      break;
+    }
     case 'semantic-status': {
-      const { semanticQueue } = require('../lib/semantic-queue.cjs');
-      result = semanticQueue(await op.archive.listItems(op.scope)).stats;
+      const { semanticQueueFromSummaries } = require('../lib/semantic-queue.cjs');
+      result = semanticQueueFromSummaries(await op.archive.listVersionSummaries(op.scope)).stats;
       break;
     }
     case 'annotate': {
@@ -125,8 +147,20 @@ async function main() {
       const runs = positiveInt(values.runs, 10000) || Infinity;
       for (let round = 0; round < runs; round++) {
         const manifest = JSON.parse(await readFile(values.manifest, 'utf8'));
-        const stats = await ingestManifest(manifest, input => input.root ? require('../lib/intake.cjs').intakeDirectory(op, input, ingest) : ingest(op, input));
-        console.log(JSON.stringify(stats));
+        const collector = {sessionsAttempted:0,sessionsFailed:0,itemsImported:0,pending:0,blocked:0,baselines:0,skippedForBackfill:0,skippedForCapacity:0};
+        let usedCollector = false;
+        const stats = await ingestManifest(manifest, async input => {
+          if (input.incremental === true) {
+            if (!input.root) throw new Error('Collector requires a source root');
+            usedCollector = true;
+            const result = await require('../lib/collector.cjs').collectChanged(op,input,ingest);
+            for (const k of ['sessionsAttempted','sessionsFailed','itemsImported','pending','blocked']) collector[k] += result[k];
+            collector.baselines += Number(result.baseline); collector.skippedForBackfill += Number(result.skippedForBackfill); collector.skippedForCapacity += Number(result.skippedForCapacity);
+            return result;
+          }
+          return input.root ? require('../lib/intake.cjs').intakeDirectory(op, input, ingest) : ingest(op, input);
+        });
+        console.log(JSON.stringify(usedCollector ? {...stats,collector} : stats));
         if (round + 1 < runs) await setTimeout(interval * 1000);
       }
       return;
@@ -162,7 +196,7 @@ async function main() {
 }
 
 main().catch(error => {
-  const safe = error.code === 'CORRECTION_EFFECTIVE_TIME' || /^(Select a project|Provide a source|Invalid numeric|Unexpected positional|CouchDB sync is unavailable|Unknown command)/.test(error.message);
+  const safe = ['CORRECTION_EFFECTIVE_TIME','ARCHIVE_NOT_FOUND'].includes(error.code) || /^(Select a project|Provide a source|Invalid numeric|Unexpected positional|CouchDB sync is unavailable|Unknown command)/.test(error.message);
   console.error(safe ? error.message : 'Memory operation failed. Check the scope, inputs, and local service configuration.');
   process.exitCode = 1;
 });

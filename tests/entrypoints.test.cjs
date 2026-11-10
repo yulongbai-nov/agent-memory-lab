@@ -151,3 +151,51 @@ test('private originals preserve exact bytes even when redacted previews are ide
   const old = versions[0];
   assert.equal((await op.evidence({ id: old.item.id, revision: old.versionId })).original.availability, 'missing-locally');
 });
+
+test('overlapping daily writers publish the newer derived view last', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'memory-lab-daily-serialize-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  execFileSync(process.execPath, [join(__dirname, '..', 'bin', 'seed-demo.cjs'), dir]);
+  const { operations } = require('../lib/operations.cjs');
+  const { dailyReview } = require('../lib/daily.cjs');
+  const { setTimeout: delay } = require('node:timers/promises');
+  const op = await operations({ dir, project: 'demo' });
+  const original = (await op.current({ topic: 'Release checklist' }))[0];
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const noImport = () => { throw Error('No imports expected'); };
+  const oldRun = dailyReview({
+    ...op,
+    async current(args) {
+      const stale = await op.current(args);
+      entered.resolve();
+      await release.promise;
+      return stale;
+    }
+  }, [], noImport);
+
+  let newRun;
+  try {
+    await entered.promise;
+    await op.annotate({
+      target: original.citation, kind: 'correction', id: 'synthetic-overlap',
+      revises: original.review_id, text: 'Tuesday at noon.'
+    });
+    let newEntered = false;
+    newRun = dailyReview({
+      ...op,
+      async current(args) {
+        newEntered = true;
+        return op.current(args);
+      }
+    }, [], noImport);
+    await delay(100);
+    assert.equal(newEntered, false);
+  } finally {
+    release.resolve();
+    await Promise.all([oldRun, newRun]);
+  }
+  const [snapshot] = await readdir(join(dir, 'derived'));
+  const { wiki } = JSON.parse(await readFile(join(dir, 'derived', snapshot), 'utf8'));
+  assert.equal(wiki.find(row => row.topic === 'Release checklist').text, 'Tuesday at noon.');
+});

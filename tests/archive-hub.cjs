@@ -27,10 +27,15 @@ const docker = (...args) => execFileSync('docker',args,{encoding:'utf8',stdio:['
   for (const [user,password,role] of [['writer',writer,'archive_writer'],['reader',reader,'archive_reader'],['annotator',annotator,'archive_annotator']]) assert.ok((await request('/_users/org.couchdb.user:'+user,adminAuth,'PUT',{_id:'org.couchdb.user:'+user,name:user,password,roles:[role],type:'user'})).ok);
   await provision({url:base+'/archive',authorization:adminAuth});
   const scope = {owner:'synthetic',project:'project'}, source={harness:'test',instance:'one',session:'s'};
-  const a=await openArchive({dir:path.join(root,'a')}), b=await openArchive({dir:path.join(root,'b')});
+  const a=await openArchive({dir:path.join(root,'a')});
+  const replicaDir=path.join(root,'b');
+  let b=await openArchive({dir:replicaDir});
   await a.importBatch({scope,source,checkpoint:{position:1},items:[{id:'m',kind:'message',text:'synthetic'}]});
   const options = {...scope,url:base+'/archive',authorization:writerAuth};
   await a.sync(options); assert.equal((await b.sync(options)).pulled,1);
+  await require('../lib/storage-sqlite.cjs').migrateJsonToSqlite({dir:replicaDir});
+  b=await openArchive({dir:replicaDir});
+  assert.equal(b.backend,'sqlite');
   assert.equal((await b.getItem({...scope,id:'m'})).item.text,'synthetic');
   const item = await a.getItem({...scope,id:'m'});
   await b.addAnnotation({scope,id:'review',kind:'note',text:'synthetic note',target:{id:'m',revision:item.versionId}});

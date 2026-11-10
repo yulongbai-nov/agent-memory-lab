@@ -25,7 +25,7 @@ async function main() {
       "install",
       "--prefix",
       prefix,
-      "--offline",
+      "--prefer-offline",
       "--omit=dev",
       "--ignore-scripts",
       "--no-audit",

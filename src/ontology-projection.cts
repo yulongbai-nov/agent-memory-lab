@@ -1,10 +1,5 @@
 "use strict";
 
-const { readFile, lstat } =
-  require("node:fs/promises") as typeof import("node:fs/promises");
-const { join } = require("node:path") as typeof import("node:path");
-const { createHash } = require("node:crypto") as typeof import("node:crypto");
-
 // A rebuildable view over scoped, explicitly reviewed archive records.
 type Scope = { owner: string; project: string };
 type Source = { harness: string; instance: string; session: string };
@@ -24,9 +19,6 @@ type Version = {
     text?: string;
     time?: string;
     timestamp?: string;
-    metadata?: {
-      original?: { availability?: string; sha256?: string; bytes?: number };
-    };
   };
 };
 type Review = {
@@ -68,7 +60,6 @@ type Edge = {
   to: string;
   evidence?: SourceRevision;
   effectiveAt?: string | null;
-  quote?: string;
 };
 type Projection = {
   scope: Scope;
@@ -93,7 +84,6 @@ type Projection = {
   }[];
 };
 type Archive = {
-  dir?: string;
   listAnnotations: (scope: Scope) => Promise<Review[]>;
   getItem: (
     args: Scope & { id: string; revision: string; source?: Source },
@@ -380,54 +370,6 @@ async function rebuildProjection({
         !relation.version.item.text.includes(d.quote)
       )
         throw new Error("Dependency quote not found in evidence");
-      const original = relation.version.item.metadata?.original;
-      if (
-        !archive.dir ||
-        original?.availability !== "archived" ||
-        typeof original.sha256 !== "string" ||
-        !/^[a-f0-9]{64}$/.test(original.sha256) ||
-        !Number.isSafeInteger(original.bytes) ||
-        (original.bytes || 0) < 1 ||
-        (original.bytes || 0) > 1048576
-      )
-        throw new Error("Dependency quote original unavailable");
-      const filename = join(
-        archive.dir,
-        "originals",
-        original.sha256 + ".jsonl",
-      );
-      let bytes: Buffer;
-      try {
-        const info = await lstat(filename);
-        if (
-          !info.isFile() ||
-          info.isSymbolicLink() ||
-          info.size !== original.bytes ||
-          info.mode & 0o077
-        )
-          throw new Error("invalid");
-        bytes = await readFile(filename);
-      } catch {
-        throw new Error("Dependency quote original unavailable");
-      }
-      if (createHash("sha256").update(bytes).digest("hex") !== original.sha256)
-        throw new Error("Dependency quote original invalid");
-      let raw: unknown;
-      try {
-        raw = JSON.parse(bytes.toString("utf8"));
-      } catch {
-        throw new Error("Dependency quote original invalid");
-      }
-      const contains = (value: unknown): boolean =>
-        typeof value === "string"
-          ? value.includes(d.quote as string)
-          : Array.isArray(value)
-            ? value.some(contains)
-            : !!value &&
-              typeof value === "object" &&
-              Object.values(value).some(contains);
-      if (!contains(raw))
-        throw new Error("Dependency quote not found in original");
     }
     edges.push({
       kind: "DEPENDS_ON",
@@ -435,7 +377,6 @@ async function rebuildProjection({
       from: task.id,
       to: decision.id,
       evidence: relation.ref,
-      ...(d.quote !== undefined ? { quote: d.quote } : {}),
       effectiveAt: task.effectiveAt,
     });
   }
@@ -535,7 +476,6 @@ function answerDependency({
               text: task.text,
               evidence: task.evidence,
               relationEvidence: e.evidence,
-              ...(e.quote !== undefined ? { relationQuote: e.quote } : {}),
             },
           ]
         : [];

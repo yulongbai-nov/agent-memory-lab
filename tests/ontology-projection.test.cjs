@@ -4,7 +4,6 @@ const test = require("node:test"),
 const fs = require("node:fs/promises"),
   path = require("node:path"),
   os = require("node:os");
-const { originalCapture } = require("../lib/originals.cjs");
 const { openArchive } = require("../lib/archive.cjs"),
   { createQuery } = require("../lib/query.cjs");
 const {
@@ -24,19 +23,6 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
       session: "clarification",
     },
     codex = { harness: "codex", instance: "one", session: "change" };
-  const rawRelation = Buffer.from(
-    JSON.stringify({
-      type: "message",
-      data: {
-        role: "user",
-        text: "The checklist depends on the rehearsal slot.",
-      },
-    }) + "\n",
-  );
-  const originalRelation = await originalCapture(dir)({
-    bytes: rawRelation,
-    coordinate: 3,
-  });
   await a.importBatch({
     scope,
     source: dsh,
@@ -62,7 +48,6 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
         role: "user",
         text: "The checklist depends on the rehearsal slot.",
         time: "2026-01-01T10:05:00Z",
-        metadata: { original: originalRelation },
       },
     ],
   });
@@ -171,7 +156,8 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
   assert.equal(result.tasks[0].text, "Prepare the checklist");
   assert.equal(result.tasks[0].evidence.revision, task.revision);
   assert.equal(result.tasks[0].relationEvidence.revision, relation.revision);
-  assert.equal(result.tasks[0].relationQuote, "depends on the rehearsal slot");
+  assert.ok(!JSON.stringify(graph).includes("depends on the rehearsal slot"));
+  assert.ok(!JSON.stringify(result).includes("depends on the rehearsal slot"));
   assert.equal(graph.corrections[0].targetEvidence.revision, original.revision);
   assert.equal(graph.corrections[0].evidence.revision, correction.revision);
   assert.equal(graph.corrections[0].effectiveTimeKnown, false);
@@ -287,17 +273,6 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
     }),
     /Dangling/,
   );
-  const relationFile = path.join(
-    dir,
-    "originals",
-    originalRelation.sha256 + ".jsonl",
-  );
-  await fs.writeFile(relationFile, Buffer.alloc(rawRelation.length, 120));
-  await assert.rejects(
-    rebuildProjection({ archive: a, scope, asOf, dependencies }),
-    /original invalid/,
-  );
-  await fs.writeFile(relationFile, rawRelation);
   await assert.rejects(
     rebuildProjection({
       archive: a,

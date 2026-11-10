@@ -18,3 +18,4 @@ docker rm "$CONTAINER" >/dev/null
 CONTAINER=
 docker run --rm --network none --read-only --tmpfs /tmp:mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/recall.cjs
 docker run --rm --network none --read-only --tmpfs /tmp:mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/find-contract.cjs
+docker run --rm --network none --read-only --tmpfs /tmp:mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/read-contract.cjs

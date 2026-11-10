@@ -20,9 +20,11 @@ export default defineConfig([
   {
     files: [
       "benchmark/harness-e2e/codex/find-contract.cjs",
+      "benchmark/harness-e2e/codex/read-contract.cjs",
       "benchmark/memory-views/run.cjs",
       "eslint.config.mjs",
       "lib/adapters/chatgpt-snapshot.cjs",
+      "lib/bounded-memory-relay.cjs",
       "lib/codex-discovery.cjs",
       "lib/ontology-projection.cjs",
       "scripts/check-ts-scope.cjs",

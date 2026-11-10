@@ -424,7 +424,7 @@ function validateDrySafety(
       break;
     }
   }
-  assert.ok(refused && cap.summary().conservativeExcerptBytes <= limit);
+  assert.ok(refused && cap.summary().budgetBytes <= limit);
   return {
     unknownInputDenied: true,
     unissuedOutputDenied: true,
@@ -435,6 +435,219 @@ function validateDrySafety(
     cumulativeCapDenied: true,
     approvedBeforeRefusal: cap.summary().forwarded,
   };
+}
+
+async function validateEchoBudget(repo, ledger, binding, shared, token) {
+  const {
+    model,
+    limit,
+    createBoundedRelay,
+    listenBoundedRelay,
+    toolReceipt,
+    sse,
+  } = shared;
+  const { createBoundedFind } = require(
+    path.join(repo, "lib/generated/bounded-memory-find.cjs"),
+  );
+  const excerpt = "abcdefghijklmnopqrstuvwxyz";
+  const oversizedKeyword = excerpt.repeat(200);
+  assert.equal(Buffer.byteLength(excerpt), 26);
+  assert.equal(Buffer.byteLength(oversizedKeyword), 5200);
+  const assistantSentinel = "SYNTHETIC_ASSISTANT_ECHO";
+  const summarySentinel = "SYNTHETIC_REASONING_SUMMARY_ECHO";
+  const encrypted = "synthetic-opaque-reasoning";
+  const receiptFile = ledger + ".dry-echo";
+  const call = (name, id, args) => ({
+    type: "function_call",
+    namespace: "mcp__memory",
+    name,
+    id: "fc_" + id,
+    call_id: "call_" + id,
+    arguments: json(args),
+  });
+  const echoCost = (c) =>
+    [c.arguments, c.id, c.call_id, c.call_id].reduce(
+      (bytes, field) => bytes + Buffer.byteLength(json(field)),
+      0,
+    );
+  const evidence = call("memory_evidence", "evidence", {
+    id: "E1",
+    revision: "V1",
+  });
+  const smallFind = call("memory_find", "small", { limit: 0 });
+  const oversizedFind = call("memory_find", "oversized", {
+    keyword: oversizedKeyword,
+  });
+  const evidenceResult = {
+    ref: "E1",
+    at: "2026-01-01T00:00:00Z",
+    excerpt,
+    redacted: false,
+  };
+  const find = createBoundedFind(
+    () => assert.fail("invalid find dispatched a lookup"),
+    () => {},
+  );
+  const smallResult = await find.run(JSON.parse(smallFind.arguments));
+  const oversizedResult = await find.run(JSON.parse(oversizedFind.arguments));
+  assert.equal(smallResult.error.code, "limit-minimum");
+  assert.equal(oversizedResult.error.code, "keyword-max-length");
+  await fs.writeFile(
+    receiptFile,
+    [
+      [evidence, evidenceResult],
+      [smallFind, smallResult],
+      [oversizedFind, oversizedResult],
+    ]
+      .map(([c, result]) =>
+        json({
+          tool: c.name,
+          proof: toolReceipt(
+            c.name,
+            JSON.parse(c.arguments),
+            result,
+            binding.argumentKey,
+          ),
+        }),
+      )
+      .join("\n") + "\n",
+    { mode: 0o600, flag: "wx" },
+  );
+
+  const reasoning = {
+    type: "reasoning",
+    id: "rs_echo",
+    summary: [],
+    encrypted_content: encrypted,
+  };
+  const assistant = {
+    type: "message",
+    id: "msg_echo",
+    role: "assistant",
+    content: [{ type: "output_text", text: assistantSentinel }],
+  };
+  const frame = (id, output) =>
+    sse({ id: "resp_" + id, status: "completed", model, output });
+  const relay = createBoundedRelay(receiptFile, binding);
+  relay.response(frame("evidence", [evidence]), true);
+  let sends = 0;
+  const listener = await listenBoundedRelay({
+    relay,
+    token,
+    send(wire) {
+      sends++;
+      assert.ok(
+        ![assistantSentinel, summarySentinel, encrypted, oversizedKeyword].some(
+          (value) => wire.includes(value),
+        ),
+      );
+      const input = JSON.parse(wire).input;
+      if (sends === 1) {
+        assert.ok(wire.includes(excerpt));
+        return frame("small", [
+          {
+            ...reasoning,
+            summary: [{ type: "summary_text", text: summarySentinel }],
+          },
+          assistant,
+          smallFind,
+        ]);
+      }
+      assert.equal(sends, 2);
+      assert.ok(
+        input.some(
+          (item) =>
+            item.type === "function_call_output" &&
+            item.output === json(smallResult),
+        ),
+      );
+      return frame("oversized", [oversizedFind]);
+    },
+  });
+  const request = (c, result, context = []) =>
+    fetch(listener.url + "/responses", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer " + token,
+        "content-type": "application/json",
+      },
+      body: json({
+        model,
+        reasoning: { effort: "low" },
+        stream: true,
+        store: false,
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: binding.prompt }],
+          },
+          ...context,
+          c,
+          {
+            type: "function_call_output",
+            call_id: c.call_id,
+            output: [
+              { type: "input_text", text: "Wall time: 0 seconds" },
+              { type: "input_text", text: json(result) },
+            ],
+          },
+        ],
+      }),
+    });
+  try {
+    const first = await request(evidence, evidenceResult);
+    assert.equal(first.status, 200);
+    const firstResponse = await first.text();
+    assert.ok(firstResponse.includes(assistantSentinel));
+    assert.ok(!firstResponse.includes(summarySentinel));
+
+    const second = await request(smallFind, smallResult, [
+      assistant,
+      reasoning,
+    ]);
+    assert.equal(second.status, 200);
+    await second.text();
+    const before = relay.summary();
+    assert.equal(before.excerptBytes, 26);
+    assert.equal(before.echoBytes, echoCost(evidence) + echoCost(smallFind));
+    assert.equal(
+      before.budgetBytes,
+      before.conservativeExcerptBytes + before.echoBytes,
+    );
+    assert.ok(before.budgetBytes < limit);
+
+    // The next request omits the original evidence item. The budget must
+    // remember the earlier disclosure and still charge this rejected call.
+    const blocked = await request(oversizedFind, oversizedResult);
+    assert.equal(blocked.status, 400);
+    await blocked.text();
+    assert.equal(sends, 2);
+    assert.deepEqual(listener.failures, [
+      { code: "aggregate-quote-budget", stage: 2 },
+    ]);
+    const after = relay.summary();
+    assert.equal(after.forwarded, 2);
+    assert.equal(after.budgetBytes, before.budgetBytes);
+    const refusal = after.diagnostics.at(-1);
+    assert.equal(refusal.excerptBytes, 0);
+    assert.equal(refusal.echoBytes, echoCost(oversizedFind));
+    assert.ok(refusal.priorBudgetBytes + refusal.budgetBytes > limit);
+    return {
+      excerptBytes: before.excerptBytes,
+      oversizedKeywordBytes: Buffer.byteLength(oversizedKeyword),
+      serializedArgumentBytes: Buffer.byteLength(json(oversizedFind.arguments)),
+      refusedEchoBytes: refusal.echoBytes,
+      acceptedEchoBytes: before.echoBytes,
+      acceptedBudgetBytes: before.budgetBytes,
+      ordinaryArgumentErrorForwarded: true,
+      assistantEchoAbsent: true,
+      reasoningSummaryAbsent: true,
+      blockedBeforeUpstream: true,
+    };
+  } finally {
+    listener.close();
+  }
 }
 
 async function runReplay(repo, mcpEntry = __filename) {
@@ -475,6 +688,13 @@ async function runReplay(repo, mcpEntry = __filename) {
     );
 
     const safety = validateDrySafety(ledger, binding, shared);
+    const echoBudget = await validateEchoBudget(
+      repo,
+      ledger,
+      binding,
+      shared,
+      token,
+    );
     const provider = fakeProvider(repo, shared);
     const catalog = await functionToolCatalog(work);
     relay = createBoundedRelay(ledger, binding);
@@ -671,6 +891,7 @@ stream_max_retries = 0
       recoveredAndCompleted: true,
       tools: logs,
       safety,
+      echoBudget,
       externalModelCalls: 0,
     };
   } catch (error) {

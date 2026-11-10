@@ -89,7 +89,9 @@ test('preserves bounded tool choices and the Responses function-call wire shape'
  const find={type:'function',name:'memory_find',description:facade.description,parameters:facade.inputSchema,strict:false};
  const findArgs={limit:facade.inputSchema.properties.limit.maximum+1};
  const firstOutput=[
-  {type:'reasoning',id:'rs_fixture',summary:[]},
+  {type:'reasoning',id:'rs_fixture',summary:[{type:'summary_text',text:'Synthetic summary.'}],encrypted_content:'synthetic-opaque'},
+  {type:'message',id:'msg_progress',role:'assistant',phase:'commentary',status:'completed',
+   content:[{type:'output_text',text:'Synthetic commentary.',annotations:[]}]},
   {type:'function_call',id:'fc_fixture',call_id:'call_fixture',name:'memory_find',arguments:JSON.stringify(findArgs),status:'completed'}
  ];
  const reply=await facade.run(findArgs);
@@ -122,7 +124,8 @@ test('preserves bounded tool choices and the Responses function-call wire shape'
  assert.equal(sent.length,0);
  const choice={type:'function',name:'memory_find'};
  const instructions='Synthetic instructions forwarding sentinel.';
- const initial=await post({...body,instructions,parallel_tool_calls:true,tools:[find],tool_choice:choice});
+ const include=['reasoning.encrypted_content'];
+ const initial=await post({...body,instructions,include,parallel_tool_calls:true,tools:[find],tool_choice:choice});
  assert.equal(initial.status,200);
  assert.deepEqual((await initial.json()).output,firstOutput);
  assert.deepEqual(sent[0].tool_choice,choice);
@@ -130,10 +133,14 @@ test('preserves bounded tool choices and the Responses function-call wire shape'
  assert.equal(sent[0].instructions,instructions);
  assert.equal(sent[0].parallel_tool_calls,true);
  assert.equal(sent[0].text,undefined);
- const continuation=await post({...body,input:[...body.input,...firstOutput,result],
-  instructions,parallel_tool_calls:false,text:{format:{type:'json_schema',name:'recall_status',strict:true,schema}},tool_choice:'none'});
+ const continuationInput=[...body.input,...firstOutput,result];
+ const continuation=await post({...body,input:continuationInput,
+  instructions,include,parallel_tool_calls:false,text:{format:{type:'json_schema',name:'recall_status',strict:true,schema}},tool_choice:'none'});
  assert.equal(continuation.status,200);
  await continuation.json();
+ assert.deepEqual(sent[1].input,continuationInput);
+ assert.deepEqual(sent[0].include,include);
+ assert.deepEqual(sent[1].include,include);
  assert.deepEqual(sent[1].input.at(-1),result);
  assert.equal(sent[1].input.at(-2).call_id,result.call_id);
  assert.deepEqual(sent[1].text.format.schema,schema);

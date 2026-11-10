@@ -39,7 +39,7 @@ node bin/memory.cjs serve --project work --port 8787
 
 网页或 CLI 可以明确复核决定、变更和待办，也可以批注纠正。证据使用来源、条目 ID 和归档版本组合。变更引用前一条审核的编号；纠正必须引用确切解释的审核编号，保存即生效，拒绝另填生效时间。后来另有原始消息作为依据时，在 CLI 的 `annotate --kind correction` 同时传入旧 `--target`、`--revises` 审核编号和新 `--evidence` 精确引用。MCP 对应字段为 `target`、`revises` 和 `evidence`。查询保留旧 `citation`，有新证据时另返回 `effectiveCitation`。各同步端须先升级再传输含新字段的纠正。将来的决定或变更可单独指定生效时间。审核内容独立追加，保留原文和时间线。还没复核的原文可以搜索和查证，决定状态和下一步需要明确复核。话题有多个矛盾的决定时会标为待核实。
 
-在支持 stdio MCP 的宿主可注册 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认只提供查询，启用 `--allow-annotations` 后可追加批注。[共用 Skill](../skills/agent-memory/SKILL.md) 说明如何使用已核实的私有 MCP 绑定，或发现 `$HOME/.local/share/agent-memory-lab/memory-private.sh` 固定范围只读入口。Codex 中的 `agent-memory-synthetic-demo` 只提供合成档案查询。Codex 和 DSH 的临时隔离配置已验证运行时能发现链接的 Skill，该结论仅覆盖对应配置及当时的进程。两个宿主的符号链接、共用 Skill 文件和固定范围只读脚本是安装与路由条件；当前桌面 session 是否加载、DSH 日常桌面 profile 是否发现并调用，仍分别待验。Skill 发现也不能证明当前 session 已绑定私有 MCP。使用本机 CLI 时，仍须核实工具输出是否获准发送给当前模型。
+在支持 stdio MCP 的宿主可注册 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认只提供查询，启用 `--allow-annotations` 后可追加批注。[共用 Skill](../skills/agent-memory/SKILL.md) 说明如何使用已核实的私有 MCP 绑定，或发现 `$HOME/.local/share/agent-memory-lab/memory-private.sh` 固定范围只读入口。Codex 中的 `agent-memory-synthetic-demo` 只提供合成档案查询。Codex 和 DSH 的临时隔离配置已验证运行时能发现链接的 Skill，该结论仅覆盖对应配置及当时的进程。两个宿主的符号链接、共用 Skill 文件和固定范围只读脚本是安装与路由条件。2026-11-11，用户新开的 DSH Default workspace 会话以界面所示 GPT-6-Luna / Low 完成一次限定提示，显示用时 5 秒。Called tools 中实际执行的 Skill agent-memory 展示了与共用文件一致的说明及 DSH Skill 基目录，验证了该日常桌面会话发现并加载说明。该次列出了 memory_find、memory_timeline 和 memory_current 三个只读入口。记忆查询、历史读取及私有 MCP 绑定另行验收，其他既有会话的自动发现仍待验证。使用本机 CLI 时，仍须核实工具输出是否获准发送给当前模型。
 
 2026-11-11 的只读检查显示，DSH Remote UI 已登录，但连接数为 0，且没有可用 Host。账号登录、Host 连接和手机 Remote 使用分别验收。
 

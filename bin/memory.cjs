@@ -18,7 +18,7 @@ options['allow-annotations'] = { type: 'boolean' };
 function usage() {
   console.log(`Usage: memory <command> --project PROJECT [--dir PRIVATE_DIRECTORY]
 Commands:
-  ingest --source dsh|codex --file FILE --instance INSTANCE --session SESSION
+  ingest --source dsh|codex|chatgpt --file FILE --instance INSTANCE --session SESSION
          [--max-records N] [--batch-size N]
   ingest-tree --source dsh|codex --root DIRECTORY --instance INSTANCE [--max-sessions N] [--offset N]
   find [--keyword TEXT] [--from DATE] [--to DATE] [--limit N]
@@ -49,14 +49,14 @@ function positiveInt(value, max) {
 
 async function ingest(op, options) {
   const { readCodex, readDsh, sourceIdentity } = require('../lib/adapters');
-  const read = { codex: readCodex, dsh: readDsh }[options.source];
+  const read = options.source === 'chatgpt' ? require('../lib/adapters/chatgpt-snapshot.cjs').readChatgptSnapshot : { codex: readCodex, dsh: readDsh }[options.source];
   if (!read || !options.file || !options.instance || !options.session) throw new Error('Provide a source, file, instance, and session.');
   const source = { ...op.scope, harness: options.source, instance: options.instance, session: options.session };
   const checkpoint = await op.archive.getCheckpoint({ ...op.scope, ...sourceIdentity(source) });
   const stats = { batches: 0, itemsImported: 0, batchesReplayed: 0 };
   const { originalCapture } = require('../lib/originals.cjs');
   for await (const batch of read({
-    ...source, file: options.file, checkpoint, captureOriginal: originalCapture(op.archive.dir),
+    ...source, file: options.file, checkpoint, ...(options.source === 'chatgpt' ? {} : {captureOriginal: originalCapture(op.archive.dir)}),
     maxRecords: positiveInt(options['max-records'], 100000) || 3000,
     batchSize: positiveInt(options['batch-size'], 500) || 100,
     lookback: options.collectorLookback

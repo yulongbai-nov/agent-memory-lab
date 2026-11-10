@@ -5,6 +5,7 @@ const legacyJavaScript = require("./legacy-js-scope.json");
 
 const typescript = [
   "src/bounded-memory-find.cts",
+  "src/bounded-memory-read.cts",
   "src/chatgpt-snapshot.cts",
   "src/ontology-projection.cts",
   "src/semantic-queue.cts",

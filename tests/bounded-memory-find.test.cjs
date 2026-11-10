@@ -5,6 +5,10 @@ const test = require("node:test");
 const {
   createBoundedFind,
 } = require("../lib/generated/bounded-memory-find.cjs");
+const {
+  createBoundedTimeline,
+  createBoundedEvidence,
+} = require("../lib/generated/bounded-memory-read.cjs");
 
 test("bounded find handles optional values and clamps the requested limit", async () => {
   const diagnostics = [];
@@ -160,4 +164,78 @@ test("bounded find reports a single outcome after asynchronous lookup", async ()
   assert.equal(diagnostics.length, 1);
   assert.equal(diagnostics[0].outcome, "found");
   assert.equal(diagnostics[0].count, 1);
+});
+
+test("timeline advertises only the issued topic and recovers after bad input or lookup failure", async () => {
+  let lookups = 0;
+  const timeline = createBoundedTimeline(
+    ({ topic }) => topic === "T1",
+    async () => {
+      if (lookups++ === 0) throw new Error("/synthetic/path: underlying error");
+      return { rows: [] };
+    },
+  );
+  assert.deepEqual(timeline.inputSchema, {
+    type: "object",
+    properties: { topic: { type: "string" } },
+    required: ["topic"],
+    additionalProperties: false,
+  });
+  for (const args of [
+    {},
+    { topic: null },
+    { topic: "T1", limit: 5 },
+    { topic: "T1", offset: 0 },
+  ]) {
+    assert.deepEqual(await timeline.run(args), {
+      error: { code: "invalid-arguments" },
+    });
+  }
+  assert.deepEqual(await timeline.run({ topic: "T2" }), {
+    error: { code: "topic-not-issued" },
+  });
+  assert.equal(lookups, 0);
+  assert.deepEqual(await timeline.run({ topic: "T1" }), {
+    error: { code: "lookup-failed" },
+  });
+  assert.deepEqual(await timeline.run({ topic: "T1" }), { rows: [] });
+});
+
+test("evidence requires the exact issued pair and never exposes a thrown message", async () => {
+  let lookups = 0;
+  const evidence = createBoundedEvidence(
+    ({ id, revision }) => id === "E1" && revision === "V1",
+    () => {
+      if (lookups++ === 0) throw "synthetic internal message";
+      return { excerpt: "fixture" };
+    },
+  );
+  assert.deepEqual(evidence.inputSchema, {
+    type: "object",
+    properties: { id: { type: "string" }, revision: { type: "string" } },
+    required: ["id", "revision"],
+    additionalProperties: false,
+  });
+  for (const args of [
+    { id: "E1" },
+    { id: null, revision: "V1" },
+    { id: "E1", revision: null },
+    { id: "E1", revision: "V1", source: {} },
+    { id: "E1", revision: "V1", limit: 5 },
+    { id: "E1", revision: "V1", offset: 0 },
+  ]) {
+    assert.deepEqual(await evidence.run(args), {
+      error: { code: "invalid-arguments" },
+    });
+  }
+  assert.deepEqual(await evidence.run({ id: "E1", revision: "V2" }), {
+    error: { code: "citation-not-issued" },
+  });
+  assert.equal(lookups, 0);
+  assert.deepEqual(await evidence.run({ id: "E1", revision: "V1" }), {
+    error: { code: "lookup-failed" },
+  });
+  assert.deepEqual(await evidence.run({ id: "E1", revision: "V1" }), {
+    excerpt: "fixture",
+  });
 });

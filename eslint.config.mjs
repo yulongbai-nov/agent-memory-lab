@@ -7,6 +7,7 @@ export default defineConfig([
   {
     files: [
       "src/bounded-memory-find.cts",
+      "src/bounded-memory-read.cts",
       "src/chatgpt-snapshot.cts",
       "src/ontology-projection.cts",
       "src/semantic-validation.cts",

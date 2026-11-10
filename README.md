@@ -8,14 +8,15 @@
 - [可复用的离线同步技能](skills/couchdb-offline-sync/SKILL.md)。
 - [CouchDB/PouchDB 同步实验](benchmark/couchdb-sync/README.md)。
 
-Node.js 22 下运行 `npm ci && npm test`。实验需 Docker Compose 和 Node.js，进入实验目录执行 `./run.sh`。CI 在 Linux 真实运行二者并保存合成结果；结果不能代表手机或生产负载。
+Node.js 24 下运行 `npm ci --ignore-scripts && npm test`；测试命令会先编译。实验需 Docker Compose 和 Node.js，进入实验目录执行 `./run.sh`。CI 在 Linux 真实运行二者并保存合成结果；结果不能代表手机或生产负载。
 
 ## 中期可运行版本
 
 需要 Node.js 24。用合成资料走一遍完整界面。
 
 ```sh
-npm ci
+npm ci --ignore-scripts
+npm run build
 demo_dir=$(mktemp -d)
 node bin/seed-demo.cjs "$demo_dir"
 node bin/memory.cjs find --dir "$demo_dir" --project demo --keyword Release

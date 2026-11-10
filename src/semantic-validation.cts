@@ -63,9 +63,12 @@ function bounded(value: unknown, max: number): value is string {
     value.trim().length > 0
   );
 }
+function unknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
 function validateCandidates(output: unknown, records: unknown) {
-  if (!Array.isArray(records)) throw new Error("records must be an array");
-  const sources = new Map();
+  if (!unknownArray(records)) throw new Error("records must be an array");
+  const sources = new Map<string, string>();
   for (const record of records) {
     if (
       !objectShape(record, ["source", "item", "version", "text"]) ||
@@ -81,11 +84,11 @@ function validateCandidates(output: unknown, records: unknown) {
   }
   if (
     !objectShape(output, ["candidates"]) ||
-    !Array.isArray(output.candidates) ||
+    !unknownArray(output.candidates) ||
     output.candidates.length > 4
   )
     throw new Error("invalid candidates output");
-  const seen = new Set();
+  const seen = new Set<string>();
   return output.candidates.map((candidate) => {
     if (
       !objectShape(candidate, ["kind", "claim", "evidence"]) ||
@@ -94,7 +97,7 @@ function validateCandidates(output: unknown, records: unknown) {
         ["decision", "change", "correction", "todo"].includes(candidate.kind)
       ) ||
       !bounded(candidate.claim, TEXT_MAX) ||
-      !Array.isArray(candidate.evidence) ||
+      !unknownArray(candidate.evidence) ||
       candidate.evidence.length < 1 ||
       candidate.evidence.length > 3
     )
@@ -102,7 +105,7 @@ function validateCandidates(output: unknown, records: unknown) {
     const candidateKey = JSON.stringify([candidate.kind, candidate.claim]);
     if (seen.has(candidateKey)) throw new Error("duplicate candidate");
     seen.add(candidateKey);
-    const refs = new Set();
+    const refs = new Set<string>();
     const evidence = candidate.evidence.map((ref) => {
       if (
         !objectShape(ref, ["source", "item", "version", "quote"]) ||

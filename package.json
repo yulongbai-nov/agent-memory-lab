@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "node tests/validate.js && node tests/adapters.cjs && node --test tests/*.test.cjs",
-    "lint": "eslint src/*.cts --max-warnings 0",
-    "format:check": "prettier --check src/*.cts tsconfig.json eslint.config.mjs",
-    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node tests/validate.js && node tests/adapters.cjs && node --test tests/*.test.cjs",
+    "lint": "npm run check:ts-scope && eslint src/semantic-validation.cts src/semantic-queue.cts --max-warnings 0",
+    "format:check": "prettier --check src/semantic-validation.cts src/semantic-queue.cts tsconfig.json eslint.config.mjs scripts/check-ts-scope.cjs",
+    "typecheck": "npm run check:ts-scope && tsc --noEmit",
     "lint:workflow": "actionlint",
     "quality": "npm run lint && npm run format:check && npm run typecheck && npm run lint:workflow",
     "build": "tsc",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "check:ts-scope": "node scripts/check-ts-scope.cjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -30,5 +31,11 @@
     "prettier": "^3.9.10",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.2"
-  }
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "examples/synthetic.json",
+    "spec/event.schema.json"
+  ]
 }

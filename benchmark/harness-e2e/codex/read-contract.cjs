@@ -240,6 +240,7 @@ function fakeProvider(repo, { model, toolCatalog, sse }) {
             {
               type: "reasoning",
               id: "rs_fixture_" + i,
+              content: [],
               summary:
                 i === evidenceEnd
                   ? [
@@ -588,12 +589,14 @@ async function validateEchoBudget(repo, ledger, binding, shared, token) {
   const pre = {
     type: "reasoning",
     id: "rs_before",
+    content: [],
     summary: [],
     encrypted_content: "opaque-before",
   };
   const post = {
     type: "reasoning",
     id: "rs_after",
+    content: [],
     summary: [
       { type: "summary_text", text: "Synthetic summary after the excerpt." },
     ],
@@ -631,13 +634,17 @@ async function validateEchoBudget(repo, ledger, binding, shared, token) {
     content: [{ type: "input_text", text: binding.prompt }],
   };
   const fixedPrefix = { role: "user", content: binding.prompt };
+  const { content: preContent, ...nativePre } = pre;
+  const { content: postContent, ...nativePost } = post;
+  assert.deepEqual(preContent, []);
+  assert.deepEqual(postContent, []);
   const afterEvidence = [
-    pre,
+    nativePre,
     evidence,
     resultItem(evidence, evidenceResult, true),
   ];
   const afterFind = [
-    post,
+    nativePost,
     assistant,
     smallFind,
     resultItem(smallFind, smallResult, true),
@@ -730,6 +737,16 @@ async function validateEchoBudget(repo, ledger, binding, shared, token) {
       "request-prefix-settings-changed",
     );
     assert.equal(sends, 2);
+    const mismatch = relay
+      .summary()
+      .diagnostics.find(
+        (entry) =>
+          entry.rejection === "reasoning-not-matched" &&
+          entry.differingKnownFields.includes("encrypted_content"),
+      );
+    assert.equal(mismatch.issuedReasoningFound, true);
+    assert.ok(!json(mismatch).includes(post.encrypted_content));
+    assert.ok(!json(mismatch).includes(post.summary[0].text));
     const full = [user, ...afterEvidence, ...afterFind];
     assert.equal(await request(full), 200);
     const before = relay.summary();
@@ -809,6 +826,64 @@ async function validateEchoBudget(repo, ledger, binding, shared, token) {
     assert.equal(wireRefusal.opaqueReasoningBytes, 68008);
     assert.ok(wireRefusal.wireBytes > 65536);
 
+    const textState = {
+      ...pre,
+      id: "rs_nonempty",
+      content: [{ type: "reasoning_text", text: "Synthetic text state." }],
+    };
+    const missingContent = createBoundedRelay(receiptFile, binding);
+    missingContent.body({ ...base, input: [user] });
+    missingContent.response(frame("nonempty", [textState, smallFind]));
+    const { content: requiredContent, ...withoutContent } = textState;
+    assert.equal(requiredContent.length, 1);
+    assert.throws(
+      () =>
+        missingContent.body({
+          ...base,
+          input: [
+            user,
+            withoutContent,
+            smallFind,
+            resultItem(smallFind, smallResult, true),
+          ],
+        }),
+      /reasoning-not-matched/,
+    );
+    assert.throws(
+      () =>
+        missingContent.body({
+          ...base,
+          input: [
+            user,
+            { ...textState, content: [] },
+            smallFind,
+            resultItem(smallFind, smallResult, true),
+          ],
+        }),
+      /reasoning-not-matched/,
+    );
+    assert.throws(
+      () =>
+        missingContent.body({
+          ...base,
+          input: [
+            user,
+            { ...textState, content: null },
+            smallFind,
+            resultItem(smallFind, smallResult, true),
+          ],
+        }),
+      /reasoning-not-matched/,
+    );
+    missingContent.body({
+      ...base,
+      input: [
+        user,
+        textState,
+        smallFind,
+        resultItem(smallFind, smallResult, true),
+      ],
+    });
     const parallel = createBoundedRelay(receiptFile, binding);
     const parallelBase = { ...base, parallel_tool_calls: true };
     parallel.body({ ...parallelBase, input: [user] });
@@ -837,6 +912,8 @@ async function validateEchoBudget(repo, ledger, binding, shared, token) {
       opaqueReasoningBytes: charge.opaqueReasoningBytes,
       opaqueWireLimitEnforced: true,
       appendOnlyPrefixVerified: true,
+      nativeEmptyContentProjectionVerified: true,
+      nonemptyContentOmissionRejected: true,
       tamperingAndReorderingDenied: true,
       parallelToolOutputOrderVerified: true,
       assistantTextAndSummaryPreserved: true,

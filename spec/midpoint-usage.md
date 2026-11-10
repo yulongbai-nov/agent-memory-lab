@@ -61,6 +61,20 @@ macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private
 
 私有运行目录可用 `node bin/memory.cjs semantic-status --project work` 查看待处理条数、脱敏预览字节总量和 `requires-user-consent` 状态。该命令只输出统计。03:00 任务更新本地队列和确定性派生，模型调用数为 0。真实会话的外部模型处理须另行获得数据范围和发送授权。
 
+## 手动本地语义构建
+
+在已迁移的私有 SQLite 档案上显式运行一批：
+
+```sh
+node bin/local-derive.cjs --dir <private-dir> --owner local --project <project>
+```
+
+`--synthetic` 用同一公开合成夹具验收，可指定单独的私有空目录。实际构建使用本机现有的 llama.cpp 和 Qwen3.5 4B Q4_K_M。它优先选择已有结束标记的同一轮次内最多五条完整用户或助手预览。会跳过工具、配置、未完成条目、找不到本机原件的记录，以及需要进一步脱敏或超出预算的消息。输入总长上限为 1,500 字节。短引用别名映射回实际来源、条目与版本，再对归档脱敏预览逐字校验。原件可用统计依据本机引用与文件检查。完整原件哈希可通过独立的 `verify-original` 命令校验。
+
+推理使用命令行，不监听网络。macOS 沙盒拒绝网络、写文件和用户数据目录读取，在这些目录中仅允许读取固定模型和本次私有临时输入。系统运行库仍可读。每次启动前验证禁网和合成文件读取拒绝，失败则停止。两条 CPU 线程，上下文 768 token，输出上限 384 token，最长 60 秒。内存压力与进程常驻内存受监控。提示和临时文件存放在经 Git 工作树校验的私有 `local-derive/` 子目录，目录 0700、文件 0600。
+
+命令仅打印统计。成功候选另存为档案目录下 `local-derive/latest-*.json`，用本机文件管理器或本地编辑器人工审阅，状态固定为「待核实」。网页和普通 MCP 都不提供这些文件的读取入口。缓存按作用域、输入版本、模型文件 SHA-256 和提示版本区分。校验失败保留待处理状态，无变化时复用成功缓存。03:00 任务尚未启用该阶段，仍做确定性整理。外部私有语义处理继续标记为 `requires-user-consent`，召回基准保持 `gpt-6-luna` low。
+
 ## 私有 CouchDB 同步
 
 给每个 owner/project 使用专用私有数据库。先通过授权管理员完成单节点初始化、建库和账号角色分配，再使用 `provision-hub --project work --couch-url <database-url>` 安装权限规则。运行时用私有环境注入 `MEMORY_LAB_COUCH_AUTHORIZATION`，URL 不带凭据。管理员仅用于配置，普通设备使用最小角色。非 loopback URL 要求 HTTPS。避免在浏览器、公共日志、shell 历史或公共仓库保存任何账号密钥。

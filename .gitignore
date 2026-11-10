@@ -22,3 +22,4 @@ archive.sqlite3*
 archive-export.json
 .sqlite-migration-*.tmp*
 collector-*.json*
+local-derive/

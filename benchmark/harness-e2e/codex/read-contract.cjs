@@ -13,6 +13,10 @@ const dryQuestion =
 const dryInstructions =
   "Use the synthetic memory tools. Zero matches and named tool errors are recoverable.";
 const secretSentinel = "SYNTHETIC_BACKEND_SECRET_DO_NOT_FORWARD";
+const dateCommentSentinel = "SYNTHETIC_DATE_COMMENT_DO_NOT_FORWARD";
+const dateComment = dateCommentSentinel.padEnd(5200, "x");
+const annotatedTimestamp = "2026-01-06Z (" + dateComment + ")";
+const canonicalFixtureTimestamp = "2026-01-06T00:00:00.000Z";
 const json = JSON.stringify;
 const finalSchema = {
   type: "object",
@@ -52,9 +56,8 @@ async function openSyntheticBackend(repo, archive) {
       return {
         scanned: result.rows.length,
         eligible: result.rows.map((row, index) => ({
-          row,
+          row: { ...row, time: annotatedTimestamp },
           ref: "E" + (index + 1),
-          quote: { clean: "synthetic release fixture" },
         })),
       };
     },
@@ -64,6 +67,11 @@ async function openSyntheticBackend(repo, archive) {
         throw new Error("/synthetic/evidence/" + secretSentinel);
       }
       const entry = entries.find((row) => row.ref === ref);
+      assert.equal(
+        entry.row.time,
+        annotatedTimestamp,
+        "source timestamp mutated",
+      );
       const result = await op.evidence(entry.row.citation);
       return { ref, at: entry.row.time, excerpt: result.text, redacted: false };
     },
@@ -125,6 +133,10 @@ function fakeProvider(repo, { model, toolCatalog, sse }) {
         !wire.includes(secretSentinel),
         "backend sentinel leaked into model input",
       );
+      assert.ok(
+        !wire.includes(dateCommentSentinel),
+        "timestamp comment leaked into model input",
+      );
       const body = JSON.parse(wire),
         lookup = (n) =>
           JSON.parse(
@@ -175,7 +187,15 @@ function fakeProvider(repo, { model, toolCatalog, sse }) {
         call = ["memory_timeline", args];
         valid = idx >= 3;
       } else if (i < syntheticRequests - 1) {
-        if (i === timelineEnd) citation = lookup(i - 1).rows[0].citation;
+        if (i === timelineEnd) {
+          const { rows } = lookup(i - 1);
+          assert.ok(rows.length > 0);
+          for (const row of rows) {
+            assert.equal(row.at, canonicalFixtureTimestamp);
+            assert.deepEqual(row.clues, []);
+          }
+          citation = rows[0].citation;
+        }
         const idx = i - timelineEnd;
         const args = [
           { id: citation.id, revision: null },
@@ -188,6 +208,7 @@ function fakeProvider(repo, { model, toolCatalog, sse }) {
       } else {
         const got = lookup(i - 1);
         assert.equal(got.ref, citation.id);
+        assert.equal(got.at, canonicalFixtureTimestamp);
         assert.ok(got.excerpt);
         answer = json({ excerpt: got.excerpt });
       }
@@ -651,6 +672,12 @@ async function validateEchoBudget(repo, ledger, binding, shared, token) {
 }
 
 async function runReplay(repo, mcpEntry = __filename) {
+  assert.equal(Buffer.byteLength(dateComment), 5200);
+  assert.equal(Buffer.byteLength(annotatedTimestamp), 5214);
+  assert.equal(
+    new Date(annotatedTimestamp).toISOString(),
+    canonicalFixtureTimestamp,
+  );
   const shared = require(path.join(repo, "lib/bounded-memory-relay.cjs"));
   const { model, names, createBoundedRelay, listenBoundedRelay, toolCatalog } =
     shared;
@@ -703,7 +730,9 @@ async function runReplay(repo, mcpEntry = __filename) {
       send: provider.send,
       token,
       observe(raw) {
-        assert.ok(!json(raw).includes(secretSentinel));
+        const serialized = json(raw);
+        assert.ok(!serialized.includes(secretSentinel));
+        assert.ok(!serialized.includes(dateCommentSentinel));
         if (nativeTools) return;
         const namespace = raw.tools?.find(
           (tool) => tool.type === "namespace" && tool.name === "mcp__memory",
@@ -821,6 +850,7 @@ stream_max_retries = 0
       .split("\n")
       .map((line) => JSON.parse(line));
     assert.ok(!stdout.includes(secretSentinel));
+    assert.ok(!stdout.includes(dateCommentSentinel));
     assert.equal(exit, 0);
     assert.equal(listener.failures.length, 0);
     assert.ok(events.some(({ type }) => type === "turn.completed"));
@@ -854,6 +884,7 @@ stream_max_retries = 0
     );
     const ledgerText = await fs.readFile(ledger, "utf8");
     assert.ok(!ledgerText.includes(secretSentinel));
+    assert.ok(!ledgerText.includes(dateCommentSentinel));
     const rows = ledgerText.trim().split("\n").map(JSON.parse);
     assert.deepEqual(
       rows.map((row) => row.tool),
@@ -887,6 +918,15 @@ stream_max_retries = 0
       requests: summary.forwarded,
       matchedMcpCalls: calls.length,
       backendSentinelAbsent: true,
+      timestampEgress: {
+        sourceBytes: Buffer.byteLength(annotatedTimestamp),
+        commentBytes: Buffer.byteLength(dateComment),
+        canonicalBytes: Buffer.byteLength(canonicalFixtureTimestamp),
+        canonicalizedTools: ["memory_timeline", "memory_evidence"],
+        commentAbsent: true,
+        sourceUnchanged: true,
+      },
+      navigationLabels: { source: "none", emitted: 0 },
       contentFreeLedger: true,
       recoveredAndCompleted: true,
       tools: logs,

@@ -45,6 +45,8 @@ The public suite runs a separate [three-tool native replay](codex/read-contract.
 
 The relay counts serialized excerpts and replayed plaintext together against one cumulative 4 KiB budget. Starting with the first request that contains an excerpt, it conservatively charges all replayed function arguments and model-supplied IDs, including calls the MCP rejected and requests that omit the earlier excerpt. Assistant text and nonempty reasoning summaries are dropped from the upstream input. Encrypted reasoning remains opaque. Diagnostics distinguish raw excerpt bytes, serialized excerpt bytes, echo bytes, and the total charged. The synthetic regression checks that a 5,200-byte echo of a 26-byte excerpt is rejected before the fake upstream is called, while a normal argument error is forwarded.
 
+Before signing timeline and evidence results, the MCP binding projects timestamps to canonical ISO strings. The stored source records are left intact. The synthetic replay passes the same date with a 5,200-byte comment through both paths and checks that the comment never appears in an upstream request. This binding emits no navigation labels. Timeline rows carry issued aliases and timestamps, and scoped private backends must supply the sanitized excerpt to the evidence binding.
+
 ## Local proxy
 
 Run the following only for an explicitly authorized synthetic experiment. The process listens on loopback and reads the single `OPENAI_API_KEY=…` entry from `~/.local/share/agent-memory-lab/credentials/openai.env`. The credential file must be owned by the current user with mode 0600. Use a new gate token for each process and pass only that token to the test client.

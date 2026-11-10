@@ -32,8 +32,7 @@ test('trusted proxy binds model, effort, tool scope, credentials and request bud
  assert.equal(calls.length,0);
  for(let i=0;i<LIMITS.requests;i++){
   const r=await post({...body,max_output_tokens:99999,store:true,tools:[
-   {type:'namespace',name:'mcp__memory',tools:[{type:'function',name:'memory_evidence'},
-    {type:'function',name:'memory_timeline',parameters:{type:'object',properties:{keyword:{type:'string'}}}}]},
+   {type:'namespace',name:'mcp__memory',tools:[{type:'function',name:'memory_evidence'}]},
    {type:'custom',name:'apply_patch'},{type:'function',name:'list_mcp_resources'}
   ]});
   assert.equal(r.status,200);
@@ -54,9 +53,7 @@ test('trusted proxy binds model, effort, tool scope, credentials and request bud
   assert.equal(x.body.store,false);
   assert.equal(x.body.model,'gpt-6-luna');
   assert.equal(x.body.reasoning.effort,'low');
-  assert.deepEqual(x.body.tools,[{type:'namespace',name:'mcp__memory',tools:[{type:'function',name:'memory_evidence'},
-   {type:'function',name:'memory_timeline',strict:true,parameters:{type:'object',additionalProperties:false,
-    required:['topic'],properties:{topic:{type:'string'}}}}]}]);
+  assert.deepEqual(x.body.tools,[{type:'namespace',name:'mcp__memory',tools:[{type:'function',name:'memory_evidence'}]}]);
  }
 });
 

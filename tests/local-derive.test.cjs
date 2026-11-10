@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtemp, readdir, rm } = require('node:fs/promises');
+const { mkdir, mkdtemp, readdir, rm } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { runLocalDerive, selectLocalBatch } = require('../lib/local-derive.cjs');
@@ -71,4 +71,22 @@ test('private selector uses only complete scoped messages with local original re
   assert.deepEqual(batch.records.map(row=>row.item),['u','a']);
   assert.equal(batch.availability.archived,2);
   assert.equal((await selectLocalBatch(readOnly,{...scope,project:'other'})).records.length,0);
+});
+
+test('local derivation refuses a Git repository nested at its private output path', async t => {
+  const dir = await mkdtemp(join(tmpdir(),'memory-local-nested-git-'));
+  t.after(() => rm(dir,{recursive:true,force:true}));
+  const folder = join(dir,'local-derive');
+  await mkdir(folder,{mode:0o700});
+  require('node:child_process').execFileSync('git',['init','-q',folder]);
+  let prepared = false;
+  const runner = {
+    async prepareLocalModel() { prepared = true; return {fingerprint:'test-model'}; },
+    async runLocalLlama() { assert.fail('Nested worktree must not launch a model'); }
+  };
+  await assert.rejects(runLocalDerive({dir,owner:'local',project:'demo',synthetic:true},runner),
+    /Private archive must be outside Git worktrees/);
+  assert.equal(prepared,false);
+  assert.deepEqual(await readdir(folder),['.git']);
+  assert.deepEqual(await readdir(dir),['local-derive']);
 });

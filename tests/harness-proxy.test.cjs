@@ -81,3 +81,37 @@ test('successful HTTP alone does not establish a completed model turn',async t=>
  assert.equal(stats.unexpectedModel,1);
  assert.deepEqual(stats.usage.input_tokens,{reported:0,tokens:null});
 });
+
+test('records a completed SSE event before the client closes an open stream',async t=>{
+ const terminal=Buffer.from('data: '+JSON.stringify({type:'response.completed',response:{
+  status:'completed',model:'gpt-6-luna',reasoning:{effort:'low'},usage:{input_tokens:7,output_tokens:2,total_tokens:9}
+ }})+'\n\n');
+ let upstreamAborted;
+ const aborted=new Promise(resolve=>{upstreamAborted=resolve;});
+ const server=createBudgetProxy({apiKey:'synthetic-upstream-key',gateToken:token,fetchImpl:async(_url,{signal})=>
+  new Response(new ReadableStream({start(controller){
+   controller.enqueue(terminal.subarray(0,20));
+   controller.enqueue(terminal.subarray(20));
+   signal.addEventListener('abort',()=>{controller.error(Error('downstream closed'));upstreamAborted();},{once:true});
+  }}),{headers:{'content-type':'text/event-stream'}})
+ });
+ server.listen(0,'127.0.0.1');await once(server,'listening');
+ t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const root='http://127.0.0.1:'+server.address().port,authorization='Bearer '+token;
+ const response=await fetch(root+'/v1/responses',{method:'POST',headers:{authorization,'content-type':'application/json'},
+  body:JSON.stringify({...body,stream:true})});
+ const reader=response.body.getReader();
+ let received=0;
+ while(received<terminal.length){
+  const part=await reader.read();
+  assert.equal(part.done,false);
+  received+=part.value.length;
+ }
+ await reader.cancel();
+ await aborted;
+ const stats=await fetch(root+'/stats',{headers:{authorization}}).then(r=>r.json());
+ assert.equal(stats.providerOk,1);
+ assert.equal(stats.providerFailed,0);
+ assert.equal(stats.effortConfirmed,1);
+ assert.deepEqual(stats.usage.total_tokens,{reported:1,tokens:9});
+});

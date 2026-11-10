@@ -6,6 +6,7 @@ const { once } = require('node:events');
 const { constants, closeSync, fstatSync, openSync, readFileSync } = require('node:fs');
 const { homedir } = require('node:os');
 const { join } = require('node:path');
+const { StringDecoder } = require('node:string_decoder');
 
 const MODEL = 'gpt-6-luna';
 const EFFORT = 'low';
@@ -127,7 +128,8 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
   const stats={requests:0,inputBytes:0,providerOk:0,providerFailed:0,authFailures:0,rateLimits:0,
     modelUnavailable:0,providerRejections:0,gateRejections:0,budgetRefusals:0,deadlineRefusals:0,
     terminalCompleted:0,missingTerminal:0,missingModel:0,unexpectedModel:0,
-    effortConfirmed:0,effortUnreported:0,unexpectedEffort:0};
+    effortConfirmed:0,effortUnreported:0,unexpectedEffort:0,
+    clientClosedBeforeTerminal:0,transportFailures:0};
   const models=new Set();
   const usage=Object.fromEntries(['input_tokens','output_tokens','total_tokens'].map(key=>[key,{reported:0,tokens:0}]));
   let deadline;
@@ -159,6 +161,27 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
     stats.requests++;stats.inputBytes+=bytes;
     const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),Math.min(LIMITS.requestMs,deadline-now));
     res.on('close',()=>controller.abort());
+    let terminalObserved=false;
+    const observeTerminal=completed=>{
+      if(!completed||terminalObserved)return;
+      terminalObserved=true;
+      stats.terminalCompleted++;
+      if(typeof completed.model!=='string'){stats.missingModel++;stats.providerFailed++;}
+      else if(!/^gpt-6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(completed.model)){
+        stats.unexpectedModel++;stats.providerFailed++;
+      } else if(completed.reasoning?.effort!=null&&completed.reasoning.effort!==EFFORT){
+        stats.unexpectedEffort++;stats.providerFailed++;
+      } else {
+        if(completed.reasoning?.effort===EFFORT)stats.effortConfirmed++;
+        else stats.effortUnreported++;
+        models.add(completed.model);
+        stats.providerOk++;
+        for(const [key,value] of Object.entries(usage)) {
+          const tokens=completed.usage?.[key];
+          if(Number.isSafeInteger(tokens)&&tokens>=0){value.reported++;value.tokens+=tokens;}
+        }
+      }
+    };
     try{
       const upstream=await fetchImpl(UPSTREAM,{method:'POST',redirect:'error',signal:controller.signal,
         headers:{authorization:'Bearer '+apiKey,'content-type':'application/json'},body:data});
@@ -177,37 +200,36 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
       if(!/^application\/json\b|^text\/event-stream\b/.test(type)){stats.providerFailed++;await upstream.body.cancel();return send(502,{error:'provider format rejected'});}
       res.writeHead(200,{'content-type':type,'cache-control':'no-store'});
       let received=0;
-      const receivedParts=[];
+      let pending='';
+      const decoder=new StringDecoder('utf8');
       for await(const part of upstream.body){
         received+=part.length;
         if(received>LIMITS.responseBytes)throw Error('response limit');
-        receivedParts.push(part);
-        if(!res.write(part))await Promise.race([once(res,'drain'),once(res,'close')]);
-        if(res.destroyed)throw Error('client closed');
-      }
-      const completed=completedResponse(Buffer.concat(receivedParts).toString('utf8'),type);
-      if(!completed){stats.missingTerminal++;stats.providerFailed++;}
-      else {
-        stats.terminalCompleted++;
-        if(typeof completed.model!=='string'){stats.missingModel++;stats.providerFailed++;}
-        else if(!/^gpt-6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(completed.model)){
-          stats.unexpectedModel++;stats.providerFailed++;
-        } else if(completed.reasoning?.effort!=null&&completed.reasoning.effort!==EFFORT){
-          stats.unexpectedEffort++;stats.providerFailed++;
-        } else {
-          if(completed.reasoning?.effort===EFFORT)stats.effortConfirmed++;
-          else stats.effortUnreported++;
-          models.add(completed.model);
-          stats.providerOk++;
-          for(const [key,value] of Object.entries(usage)) {
-            const tokens=completed.usage?.[key];
-            if(Number.isSafeInteger(tokens)&&tokens>=0){value.reported++;value.tokens+=tokens;}
+        if(!terminalObserved){
+          pending+=decoder.write(part);
+          if(type.startsWith('text/event-stream')){
+            const lastLine=pending.lastIndexOf('\n');
+            if(lastLine>=0){
+              // Codex can close the downstream connection as soon as this
+              // event arrives, before the upstream transport reaches EOF.
+              observeTerminal(completedResponse(pending.slice(0,lastLine+1),type));
+              pending=pending.slice(lastLine+1);
+            }
           }
         }
+        if(res.destroyed)throw Error('client closed');
+        if(!res.write(part)&&!res.destroyed)await Promise.race([once(res,'drain'),once(res,'close')]);
+        if(res.destroyed)throw Error('client closed');
       }
+      if(!terminalObserved)observeTerminal(completedResponse(pending+decoder.end(),type));
+      if(!terminalObserved){stats.missingTerminal++;stats.providerFailed++;}
       res.end();
     }catch{
-      stats.providerFailed++;
+      if(!terminalObserved){
+        stats.providerFailed++;
+        if(res.destroyed)stats.clientClosedBeforeTerminal++;
+        else stats.transportFailures++;
+      }
       if(!res.headersSent&&!res.destroyed)send(502,{error:'provider failed'});else res.destroy();
     }finally{clearTimeout(timer);}
   });

@@ -83,7 +83,7 @@ if ! dock start -a "$DSH" || [ "$(dock inspect -f '{{.State.ExitCode}}' "$DSH")"
 fi
 if ! after_dsh=$(proxy_stats) || ! assert_proxy_stage "$after_dsh" 0 2 2; then
   printf '%s\n' "${after_dsh:-}"
-  printf '%s\n' 'BLOCKED: DSH did not complete two upstream model requests within budget.'
+  printf '%s\n' 'BLOCKED: proxy counters do not reconcile with the two DSH source turns.'
   exit 1
 fi
 printf '%s\n' "$after_dsh"
@@ -118,7 +118,7 @@ if ! dock start -a "$DSH_RECALL" || [ "$(dock inspect -f '{{.State.ExitCode}}' "
 fi
 if ! after_recall=$(proxy_stats) || ! assert_proxy_stage "$after_recall" 2 2 7; then
   printf '%s\n' "${after_recall:-}"
-  printf '%s\n' 'BLOCKED: DSH recall did not complete its upstream model requests within budget.'
+  printf '%s\n' 'BLOCKED: proxy counters do not reconcile with DSH recall.'
   exit 1
 fi
 printf '%s\n' "$after_recall"
@@ -134,7 +134,7 @@ if ! dock start -a "$CODEX" || [ "$(dock inspect -f '{{.State.ExitCode}}' "$CODE
 fi
 if ! final=$(proxy_stats) || ! assert_proxy_stage "$final" "$recall_requests" 2 7; then
   printf '%s\n' "${final:-}"
-  printf '%s\n' 'BLOCKED: Codex did not complete an upstream model request within budget.'
+  printf '%s\n' 'BLOCKED: proxy counters do not reconcile with Codex recall.'
   exit 1
 fi
 printf '%s\n' "$final"

@@ -24,6 +24,14 @@ jobs:
       - name: Check scoped code and workflows
         run: npm run quality
       - run: npm test
+      - name: Ensure ripgrep is available for the file baseline
+        run: |
+          if ! command -v rg >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ripgrep
+          fi
+      - name: Verify deterministic bounded memory retrieval (no model)
+        run: npm run check:memory-retrieval
       - name: Verify packaged production CLI and MCP
         run: npm run smoke:package
       - name: Verify product sync and protected roles

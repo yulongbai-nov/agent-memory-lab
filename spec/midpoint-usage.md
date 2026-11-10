@@ -39,7 +39,7 @@ node bin/memory.cjs serve --project work --port 8787
 
 网页或 CLI 可以明确复核决定、变更和待办，也可以批注纠正。证据使用来源、条目 ID 和归档版本组合。变更引用前一条审核的编号；纠正必须引用确切解释的审核编号，保存即生效，拒绝另填生效时间。后来另有原始消息作为依据时，在 CLI 的 `annotate --kind correction` 同时传入旧 `--target`、`--revises` 审核编号和新 `--evidence` 精确引用。MCP 对应字段为 `target`、`revises` 和 `evidence`。查询保留旧 `citation`，有新证据时另返回 `effectiveCitation`。各同步端须先升级再传输含新字段的纠正。将来的决定或变更可单独指定生效时间。审核内容独立追加，保留原文和时间线。还没复核的原文可以搜索和查证，决定状态和下一步需要明确复核。话题有多个矛盾的决定时会标为待核实。
 
-在任一支持 stdio MCP 的宿主注册命令 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认只提供查询，启用 `--allow-annotations` 后可追加批注。共用 Skill 位于 `skills/agent-memory/SKILL.md`，用于查询、引用和复核流程。Codex 常规配置已注册 `agent-memory-synthetic-demo`，实际连通并只提供合成档案查询。共用 Skill 已链接到 Codex 与 DSH 的发现目录，DSH 运行中发现及实际调用待解锁验证。私有档案的日常入口是本机 CLI 和网页，私有输入的模型发送仍待另行授权。
+在支持 stdio MCP 的宿主可注册 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认只提供查询，启用 `--allow-annotations` 后可追加批注。[共用 Skill](../skills/agent-memory/SKILL.md) 说明如何使用已核实的私有 MCP 绑定，或发现 `$HOME/.local/share/agent-memory-lab/memory-private.sh` 固定范围只读入口。Codex 中的 `agent-memory-synthetic-demo` 只提供合成档案查询。Codex 和 DSH 都已用临时配置验证链接的 Skill 可被已安装运行时发现。DSH 的日常配置自动调用仍待验证。使用本机 CLI 时，仍须核实工具输出是否获准发送给当前模型。
 
 网页绑定 IPv4 loopback，可选同一 Mac 的私网 HTTPS 代理。用户可主动保存已复核摘要和下一步，草稿存于同一浏览器。离线重载需要保持原先的浏览器配置和来源。重新连接后可用同一重试 ID 提交草稿。[手机接入与验收](mobile-access.md)
 

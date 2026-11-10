@@ -25,3 +25,11 @@ node bin/memory.cjs serve --dir "$demo_dir" --project demo
 打开命令打印的本机网址，搜索 `Release`，选择 `Release checklist`，查看决定、待办与精确证据。各端使用独立运行目录和同一项目范围。默认归档路径为 `~/.local/share/agent-memory-lab`，目录需为私有权限，归档拒绝位于 Git 工作树。真实原文和凭据留在私有运行环境。
 
 [使用手册](spec/midpoint-usage.md) · [中期验收状态](spec/midpoint-status.md)
+
+Development checks: after `npm ci --ignore-scripts`, run `npm run build` to
+compile the semantic modules into `lib/generated/`. Run `npm run quality` for
+scoped lint, formatting, strict TypeScript, and workflow checks (requires
+`actionlint` on PATH), and `npm test` for the test suite. The TypeScript scope is
+`src/semantic-validation.cts` and `src/semantic-queue.cts`; their CommonJS
+entry points and all other JavaScript remain legacy boundaries. The generated
+files are build artifacts and are included in packed releases.

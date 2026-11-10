@@ -16,6 +16,13 @@ jobs:
           node-version: '24.22.1'
           cache: npm
       - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run build
+      - name: Install pinned workflow validator
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Check scoped code and workflows
+        run: npm run quality
       - run: npm test
       - name: Verify product sync and protected roles
         run: node tests/archive-hub.cjs

@@ -1,1 +1,34 @@
-{"name":"agent-memory-lab","version":"0.1.0","private":true,"scripts":{"test":"node tests/validate.js && node tests/adapters.cjs && node --test tests/*.test.cjs"},"dependencies":{"@modelcontextprotocol/sdk":"1.32.2","ajv":"8.17.1","ajv-formats":"3.0.1"},"bin":{"agent-memory-lab":"bin/memory.cjs"},"engines":{"node":">=24"}}
+{
+  "name": "agent-memory-lab",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/validate.js && node tests/adapters.cjs && node --test tests/*.test.cjs",
+    "lint": "eslint src/*.cts --max-warnings 0",
+    "format:check": "prettier --check src/*.cts tsconfig.json eslint.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint:workflow": "actionlint",
+    "quality": "npm run lint && npm run format:check && npm run typecheck && npm run lint:workflow",
+    "build": "tsc",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  },
+  "bin": {
+    "agent-memory-lab": "bin/memory.cjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.19.2",
+    "eslint": "^9.39.5",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.2"
+  }
+}

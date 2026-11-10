@@ -82,6 +82,71 @@ test('successful HTTP alone does not establish a completed model turn',async t=>
  assert.deepEqual(stats.usage.input_tokens,{reported:0,tokens:null});
 });
 
+test('preserves bounded tool choices and the Responses function-call wire shape',async t=>{
+ const sent=[];
+ const find={type:'function',name:'memory_find',parameters:{type:'object',properties:{keyword:{type:'string'}},required:['keyword'],additionalProperties:false}};
+ const firstOutput=[
+  {type:'reasoning',id:'rs_fixture',summary:[]},
+  {type:'function_call',id:'fc_fixture',call_id:'call_fixture',name:'memory_find',arguments:'{"keyword":"synthetic miss"}',status:'completed'}
+ ];
+ const result={type:'function_call_output',call_id:'call_fixture',output:'{"topics":[],"coverage":{"returned":0}}'};
+ const schema={type:'object',properties:{status:{type:'string',enum:['found','unknown']}},
+  required:['status'],additionalProperties:false};
+ const server=createBudgetProxy({apiKey:'synthetic-upstream-key',gateToken:token,fetchImpl:async(_url,options)=>{
+  sent.push(JSON.parse(options.body));
+  return Response.json({status:'completed',model:'gpt-6-luna',reasoning:{effort:'low'},
+   output:sent.length===1?firstOutput:[{type:'message',role:'assistant',content:[{type:'output_text',text:'{"status":"unknown"}'}]}]});
+ }});
+ server.listen(0,'127.0.0.1');await once(server,'listening');
+ t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const root='http://127.0.0.1:'+server.address().port,authorization='Bearer '+token;
+ const post=value=>fetch(root+'/v1/responses',{method:'POST',
+  headers:{authorization,'content-type':'application/json'},body:JSON.stringify(value)});
+ for(const choice of [
+  {type:'web_search'}, {type:'function',name:'list_mcp_resources'},
+  {type:'function',name:'memory_evidence'}, {type:'function',name:'memory_find',namespace:'foreign'},
+  {type:'allowed_tools',mode:'auto',tools:[{type:'function',name:'memory_find'}]}, null, 'unsupported',
+ ]){
+  const response=await post({...body,tools:[find,{type:'function',name:'list_mcp_resources'}],tool_choice:choice});
+  assert.equal(response.status,400);
+  assert.equal((await response.json()).code,'tool-choice-rejected');
+ }
+ const noTools=await post({...body,tools:[{type:'function',name:'list_mcp_resources'}],tool_choice:'required'});
+ assert.equal(noTools.status,400);
+ assert.equal((await noTools.json()).code,'tool-choice-rejected');
+ assert.equal(sent.length,0);
+ const choice={type:'function',name:'memory_find'};
+ const instructions='Synthetic instructions forwarding sentinel.';
+ const initial=await post({...body,instructions,parallel_tool_calls:true,tools:[find],tool_choice:choice});
+ assert.equal(initial.status,200);
+ assert.deepEqual((await initial.json()).output,firstOutput);
+ assert.deepEqual(sent[0].tool_choice,choice);
+ assert.deepEqual(sent[0].input,body.input);
+ assert.equal(sent[0].instructions,instructions);
+ assert.equal(sent[0].parallel_tool_calls,true);
+ assert.equal(sent[0].text,undefined);
+ const continuation=await post({...body,input:[...body.input,...firstOutput,result],
+  instructions,parallel_tool_calls:false,text:{format:{type:'json_schema',name:'recall_status',strict:true,schema}},tool_choice:'none'});
+ assert.equal(continuation.status,200);
+ await continuation.json();
+ assert.deepEqual(sent[1].input.at(-1),result);
+ assert.equal(sent[1].input.at(-2).call_id,result.call_id);
+ assert.deepEqual(sent[1].text.format.schema,schema);
+ assert.equal(sent[1].tool_choice,'none');
+ assert.equal(sent[1].instructions,instructions);
+ assert.equal(sent[1].parallel_tool_calls,false);
+ for(const mode of ['auto','required']){
+  const response=await post({...body,tools:[{type:'namespace',name:'mcp__memory',tools:[find]}],tool_choice:mode});
+  assert.equal(response.status,200);
+  await response.json();
+  assert.equal(sent.at(-1).tool_choice,mode);
+  assert.equal(sent.at(-1).parallel_tool_calls,false);
+ }
+ const stats=await fetch(root+'/stats',{headers:{authorization}}).then(r=>r.json());
+ assert.equal(stats.toolChoiceRejections,8);
+ assert.equal(stats.requests,4);
+});
+
 test('records a completed SSE event before the client closes an open stream',async t=>{
  const terminal=Buffer.from('data: '+JSON.stringify({type:'response.completed',response:{
   status:'completed',model:'gpt-6-luna',reasoning:{effort:'low'},usage:{input_tokens:7,output_tokens:2,total_tokens:9}

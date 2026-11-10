@@ -62,6 +62,18 @@ function memoryTools(tools) {
   if (count>5) throw Error('tool rejected');
   return memory;
 }
+function memoryToolChoice(choice, tools = []) {
+  if (choice === 'auto' || choice === 'none') return choice;
+  if (choice === 'required' && tools.some(tool=>tool.type==='function'||tool.tools?.length)) return choice;
+  if (choice?.type === 'function' && typeof choice.name === 'string' &&
+      Object.keys(choice).length === 2 && Object.hasOwn(choice,'type') && Object.hasOwn(choice,'name') &&
+      tools.some(tool=>tool.type==='function' && tool.name===choice.name)) {
+    return {type:'function',name:choice.name};
+  }
+  // Only documented modes and explicitly declared flat memory functions
+  // are supported. Do not silently translate unsupported choices to auto.
+  throw Object.assign(new Error('tool choice rejected'),{code:'tool-choice-rejected'});
+}
 function buildRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || body.model !== MODEL ||
       body.reasoning?.effort !== EFFORT || (typeof body.input !== 'string' && !Array.isArray(body.input)) ||
@@ -73,6 +85,7 @@ function buildRequest(body) {
     if (Object.hasOwn(body,field)) allowed[field] = body[field];
   }
   if (body.tools !== undefined) allowed.tools=memoryTools(body.tools);
+  if (Object.hasOwn(body,'tool_choice')) allowed.tool_choice=memoryToolChoice(body.tool_choice,allowed.tools);
   if (Array.isArray(body.include) && body.include.includes('reasoning.encrypted_content')) {
     allowed.include = ['reasoning.encrypted_content'];
   }
@@ -126,7 +139,7 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
   if (typeof apiKey!=='string' || !apiKey.trim() || typeof gateToken!=='string' ||
       !/^[a-zA-Z0-9_-]{24,128}$/.test(gateToken)) throw Error('proxy credentials unavailable');
   const stats={requests:0,inputBytes:0,providerOk:0,providerFailed:0,authFailures:0,rateLimits:0,
-    modelUnavailable:0,providerRejections:0,gateRejections:0,budgetRefusals:0,deadlineRefusals:0,
+    modelUnavailable:0,providerRejections:0,gateRejections:0,toolChoiceRejections:0,budgetRefusals:0,deadlineRefusals:0,
     terminalCompleted:0,missingTerminal:0,missingModel:0,unexpectedModel:0,
     effortConfirmed:0,effortUnreported:0,unexpectedEffort:0,
     clientClosedBeforeTerminal:0,transportFailures:0};
@@ -149,7 +162,14 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
     try{incoming=await readBody(req,LIMITS.requestBytes);}
     catch{return send(413,{error:'input limit'});}
     try{outbound=buildRequest(JSON.parse(incoming.text));}
-    catch{stats.gateRejections++;return send(400,{error:'request rejected by the fixture proxy'});}
+    catch(error){
+      stats.gateRejections++;
+      if(error.code==='tool-choice-rejected'){
+        stats.toolChoiceRejections++;
+        return send(400,{error:'tool choice rejected by the fixture proxy',code:error.code});
+      }
+      return send(400,{error:'request rejected by the fixture proxy'});
+    }
     const data=JSON.stringify(outbound), bytes=Buffer.byteLength(data);
     if(bytes>LIMITS.requestBytes)return send(413,{error:'input limit'});
     if(stats.requests>=LIMITS.requests||stats.inputBytes+bytes>LIMITS.totalBytes){

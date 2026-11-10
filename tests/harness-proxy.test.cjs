@@ -116,25 +116,31 @@ test('preserves bounded tool choices and the Responses function-call wire shape'
  assert.equal((await noTools.json()).code,'tool-choice-rejected');
  assert.equal(sent.length,0);
  const choice={type:'function',name:'memory_find'};
- const initial=await post({...body,tools:[find],tool_choice:choice});
+ const instructions='Synthetic instructions forwarding sentinel.';
+ const initial=await post({...body,instructions,parallel_tool_calls:true,tools:[find],tool_choice:choice});
  assert.equal(initial.status,200);
  assert.deepEqual((await initial.json()).output,firstOutput);
  assert.deepEqual(sent[0].tool_choice,choice);
  assert.deepEqual(sent[0].input,body.input);
+ assert.equal(sent[0].instructions,instructions);
+ assert.equal(sent[0].parallel_tool_calls,true);
  assert.equal(sent[0].text,undefined);
  const continuation=await post({...body,input:[...body.input,...firstOutput,result],
-  text:{format:{type:'json_schema',name:'recall_status',strict:true,schema}},tool_choice:'none'});
+  instructions,parallel_tool_calls:false,text:{format:{type:'json_schema',name:'recall_status',strict:true,schema}},tool_choice:'none'});
  assert.equal(continuation.status,200);
  await continuation.json();
  assert.deepEqual(sent[1].input.at(-1),result);
  assert.equal(sent[1].input.at(-2).call_id,result.call_id);
  assert.deepEqual(sent[1].text.format.schema,schema);
  assert.equal(sent[1].tool_choice,'none');
+ assert.equal(sent[1].instructions,instructions);
+ assert.equal(sent[1].parallel_tool_calls,false);
  for(const mode of ['auto','required']){
   const response=await post({...body,tools:[{type:'namespace',name:'mcp__memory',tools:[find]}],tool_choice:mode});
   assert.equal(response.status,200);
   await response.json();
   assert.equal(sent.at(-1).tool_choice,mode);
+  assert.equal(sent.at(-1).parallel_tool_calls,false);
  }
  const stats=await fetch(root+'/stats',{headers:{authorization}}).then(r=>r.json());
  assert.equal(stats.toolChoiceRejections,8);

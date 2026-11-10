@@ -13,3 +13,5 @@ archive.json
 .archive-*.tmp
 derived/
 memory-lab-private/
+originals/
+intake-*.json*

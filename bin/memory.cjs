@@ -24,6 +24,7 @@ Commands:
   timeline --topic TOPIC [--from DATE] [--to DATE]
   current --topic TOPIC
   evidence --id ID --revision VERSION --source dsh|codex --instance INSTANCE --session SESSION
+  verify-original --id ID --revision VERSION
   coverage
   annotate --target CITATION_JSON --kind note|correction|decision|change|todo --text TEXT [--id RETRY_ID]
   watch --manifest PRIVATE_JSON [--interval SECONDS] [--runs N]
@@ -49,8 +50,9 @@ async function ingest(op, options) {
   const source = { ...op.scope, harness: options.source, instance: options.instance, session: options.session };
   const checkpoint = await op.archive.getCheckpoint({ ...op.scope, ...sourceIdentity(source) });
   const stats = { batches: 0, itemsImported: 0, batchesReplayed: 0 };
+  const { originalCapture } = require('../lib/originals.cjs');
   for await (const batch of read({
-    ...source, file: options.file, checkpoint,
+    ...source, file: options.file, checkpoint, captureOriginal: originalCapture(op.archive.dir),
     maxRecords: positiveInt(options['max-records'], 100000) || 3000,
     batchSize: positiveInt(options['batch-size'], 500) || 100
   })) {
@@ -95,6 +97,12 @@ async function main() {
     case 'timeline': result = await op.timeline(selection); break;
     case 'current': result = await op.current(selection); break;
     case 'evidence': result = await op.evidence(selection); break;
+    case 'verify-original': {
+      const evidence = await op.evidence(selection);
+      const { verifyOriginal } = require('../lib/originals.cjs');
+      result = await verifyOriginal(op.archive.dir, evidence.original);
+      break;
+    }
     case 'coverage': result = await op.coverage(); break;
     case 'annotate': {
       const fields = Object.fromEntries(['topic', 'basis', 'lifecycle'].filter(key => values[key] !== undefined).map(key => [key, values[key]]));
@@ -111,7 +119,7 @@ async function main() {
       const runs = positiveInt(values.runs, 10000) || Infinity;
       for (let round = 0; round < runs; round++) {
         const manifest = JSON.parse(await readFile(values.manifest, 'utf8'));
-        const stats = await ingestManifest(manifest, input => input.root ? ingestTree(op, input) : ingest(op, input));
+        const stats = await ingestManifest(manifest, input => input.root ? require('../lib/intake.cjs').intakeDirectory(op, input, ingest) : ingest(op, input));
         console.log(JSON.stringify(stats));
         if (round + 1 < runs) await setTimeout(interval * 1000);
       }
@@ -120,7 +128,7 @@ async function main() {
     case 'daily': {
       const { dailyReview } = require('../lib/daily.cjs');
       const manifest = values.manifest ? JSON.parse(await readFile(values.manifest, 'utf8')) : [];
-      result = await dailyReview(op, manifest, input => input.root ? ingestTree(op, input) : ingest(op, input));
+      result = await dailyReview(op, manifest, input => input.root ? require('../lib/intake.cjs').intakeDirectory(op, input, ingest) : ingest(op, input));
       break;
     }
     case 'serve': {
@@ -148,7 +156,7 @@ async function main() {
 }
 
 main().catch(error => {
-  const safe = /^(Select a project|Provide a source|Invalid numeric|Unexpected positional|CouchDB sync is unavailable|Unknown command)/.test(error.message);
+  const safe = error.code === 'CORRECTION_EFFECTIVE_TIME' || /^(Select a project|Provide a source|Invalid numeric|Unexpected positional|CouchDB sync is unavailable|Unknown command)/.test(error.message);
   console.error(safe ? error.message : 'Memory operation failed. Check the scope, inputs, and local service configuration.');
   process.exitCode = 1;
 });

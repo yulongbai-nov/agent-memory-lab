@@ -75,7 +75,8 @@ test('review links bind correction to exact evidence and reject invalid changes'
  await assert.rejects(a.addAnnotation({scope,id:'missing',kind:'correction',text:'fix',target}),/revises/);
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'correction',text:'fix',target:other,revises:'d'}),/evidence mismatch/);
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'change',text:'fix',target:other,revises:'d',topic:'different'}),/topic mismatch/);
- await a.addAnnotation({scope,id:'c',kind:'correction',text:'fix',target,revises:'d',valid_time:'2026-01-01T12:00:00Z'});
+ await assert.rejects(a.addAnnotation({scope,id:'future',kind:'correction',text:'fix',target,revises:'d',valid_time:'2030-01-01T12:00:00Z'}),/effect immediately/);
+ await a.addAnnotation({scope,id:'c',kind:'correction',text:'fix',target,revises:'d'});
  await a.addAnnotation({scope,id:'next',kind:'change',text:'changed',target:other,revises:'d',topic:'T'});
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'change',text:'fix',target,revises:'c'}),/invalid/);
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'decision',text:'fix',target,valid_time:'tomorrow'}),/valid_time/);

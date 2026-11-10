@@ -22,7 +22,9 @@ test('real archive review POST is scoped and retries idempotently', async t => {
  const attack={id:'secret',revision:other[0].versionId,source,owner:'a',project:'secret'}; assert.equal((await fetch(base+'/api/evidence?'+new URLSearchParams({citation:JSON.stringify(attack)}))).status,400); assert.equal((await fetch(base+'/api/annotations',{method:'POST',headers,body:JSON.stringify({kind:'annotation',text:'x',target:attack})})).status,400);
  const post=async data => fetch(base+'/api/annotations',{method:'POST',headers,body:JSON.stringify(data)});
  const correction={id:'22345678-1234-1234-1234-123456789abc',kind:'correction',text:'Corrected',target,revises:id};
- assert.equal((await post({...correction,revises:undefined})).status,400); assert.equal((await post(correction)).status,201);
+ assert.equal((await post({...correction,revises:undefined})).status,400);
+ const futureCorrection = {...correction,valid_time:'2099-01-01T00:00:00Z'}; const rejected = await post(futureCorrection); assert.equal(rejected.status,400); assert.match(await rejected.text(),/immediately/); await assert.rejects(archive.addAnnotation({...futureCorrection,scope:{owner:'a',project:'p'}}),/immediately/); assert.equal((await archive.listAnnotations({owner:'a',project:'p'})).length,1);
+ assert.equal((await post(correction)).status,201);
  let current=await (await fetch(base+'/api/current')).json(); assert.equal(current[0].text,'Corrected');
  const change={id:'32345678-1234-1234-1234-123456789abc',kind:'change',text:'Before',target,revises:id,valid_time:'2020-01-01T00:00:00Z'};
  // The original review has no effective time; a separate timed pair tests ordering.
@@ -30,5 +32,10 @@ test('real archive review POST is scoped and retries idempotently', async t => {
  assert.equal((await post(timed)).status,201); assert.equal((await post({...change,topic:'timed',revises:timed.id})).status,201);
  current=await (await fetch(base+'/api/current?topic=timed')).json(); assert.equal(current[0].label,'待核实');
  assert.equal((await post({...correction,id:'52345678-1234-1234-1234-123456789abc',topic:'other',revises:timed.id})).status,400);
+ // Simulate a correction written by an older version, preserving its exact stored content.
+ const file=path.join(dir,'archive.json'), state=JSON.parse(await fs.readFile(file,'utf8')); const legacy=Object.values(state.annotations).find(a=>a.id===correction.id); legacy.valid_time='2099-01-01T00:00:00Z'; await fs.writeFile(file,JSON.stringify(state));
+ const docs=new Map(); const fetchImpl=async(url,opts={}) => {const u=new URL(url); if(u.pathname.endsWith('/_all_docs')) return {status:200,ok:true,json:async()=>({rows:[...docs.values()].sort((a,b)=>a._id.localeCompare(b._id)).map(doc=>({id:doc._id,doc}))})}; const key=decodeURIComponent(u.pathname.split('/').at(-1)); if(opts.method==='PUT'){if(docs.has(key)) return {status:409,ok:false}; docs.set(key,JSON.parse(opts.body)); return {status:201,ok:true};} return {status:200,ok:true,json:async()=>docs.get(key)};};
+ const replica=await openArchive({dir:path.join(dir,'replica')}), config={owner:'a',project:'p',url:'http://localhost:5984/test',fetchImpl}; await archive.sync(config); await replica.sync(config); assert.deepEqual((await replica.listAnnotations({owner:'a',project:'p'})).find(a=>a.id===correction.id),legacy);
+ const {createQuery}=require('../lib/query.cjs'); assert.equal((await createQuery(replica).current({owner:'a',project:'p'})).find(x=>x.topic==='h / i / s').text,'Corrected');
  const shell=await (await fetch(base+'/offline-shell')).text(); assert.doesNotMatch(shell,/name="csrf"/); const sw=await (await fetch(base+'/sw.js')).text(); new (require('node:vm').Script)(sw); assert.doesNotMatch(sw,/\/api\//);
 });

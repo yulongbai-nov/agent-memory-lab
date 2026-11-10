@@ -9,4 +9,5 @@ for arg do
   fi
 done
 unset MEMORY_LAB_COUCH_AUTHORIZATION
-exec /usr/bin/sandbox-exec -p '(version 1) (allow default) (deny file-write*) (deny network*)'   node "$root/bin/memory.cjs" mcp "$@"
+exec /usr/bin/sandbox-exec -p '(version 1) (allow default) (deny file-write*) (deny network*) (deny file-read-data (regex #"/originals/[^/]+$"))' \
+  node "$root/bin/memory.cjs" mcp "$@"

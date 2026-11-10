@@ -533,6 +533,16 @@ async function runRetrievalCheck(fixture, views) {
   };
   assert.ok(await lookup(foreignRef, otherScope));
   assert.equal(await lookup(foreignRef, scope), null);
+  const auditReferences = async (refs) => {
+    let wrongScope = 0,
+      unresolved = 0;
+    for (const ref of refs) {
+      if (await lookup(ref, scope)) continue;
+      if (await lookup(ref, otherScope)) wrongScope++;
+      else unresolved++;
+    }
+    return { wrongScope, unresolved };
+  };
   const results = [];
   for (const question of questions) {
     for (const arm of arms) {
@@ -547,13 +557,12 @@ async function runRetrievalCheck(fixture, views) {
       const referenced = [
         ...new Set([...selectedRefs, ...context.reviews.flatMap(citedBy)]),
       ];
-      let wrongScope = 0,
-        unresolved = 0;
-      for (const ref of referenced) {
-        if (await lookup(ref, scope)) continue;
-        if (await lookup(ref, otherScope)) wrongScope++;
-        else unresolved++;
-      }
+      const { wrongScope, unresolved } = await auditReferences(referenced);
+      const candidates = await auditReferences(
+        new Set(
+          rows.flatMap((row) => [row.ref, ...citedBy(row)].filter(Boolean)),
+        ),
+      );
       const supportHits = requiredRefs.filter((ref) =>
         selectedRefs.includes(ref),
       ).length;
@@ -573,6 +582,8 @@ async function runRetrievalCheck(fixture, views) {
         fullSupport: supportHits === requiredRefs.length,
         wrongScope,
         unresolved,
+        candidateWrongScope: candidates.wrongScope,
+        candidateUnresolved: candidates.unresolved,
         resolvedRefs: referenced.length - wrongScope - unresolved,
         contextBytes,
         retrievalMs,
@@ -699,13 +710,7 @@ async function runReader(cases, refs) {
   }
 }
 
-async function main() {
-  const mode = process.argv[2];
-  assert.ok(
-    process.argv.length === 2 ||
-      (process.argv.length === 3 && ["--live", "--retrieval"].includes(mode)),
-    "Use default dry run, --retrieval, or separately authorized --live",
-  );
+async function runFixture(mode) {
   const dir = await fs.mkdtemp(join(tmpdir(), "memory-view-comparison-"));
   try {
     const start = performance.now();
@@ -714,20 +719,12 @@ async function main() {
     const sharedBuildMs = round(performance.now() - start);
     const views = await buildViews(dir, fixture, corpus);
     if (mode === "--retrieval") {
-      const result = await runRetrievalCheck(fixture, views);
-      console.log(
-        JSON.stringify(
-          {
-            mode: "retrieval",
-            sharedBuildMs,
-            buildMs: views.buildMs,
-            ...result,
-          },
-          null,
-          2,
-        ),
-      );
-      return;
+      return {
+        mode: "retrieval",
+        sharedBuildMs,
+        buildMs: views.buildMs,
+        ...(await runRetrievalCheck(fixture, views)),
+      };
     }
     const expected = [
       ...corpus.sourceRows,
@@ -794,25 +791,88 @@ async function main() {
     const run = live
       ? await runReader(cases, fixture.refs)
       : { results: [], proxy: null };
-    console.log(
-      JSON.stringify(
-        {
-          mode: live ? "live" : "dry",
-          promptVersion,
-          promptSha256: digest(instructions),
-          questions: questions.map((q) => q.id),
-          sharedBuildMs,
-          buildMs: views.buildMs,
-          retrieval,
-          ...run,
-        },
-        null,
-        2,
-      ),
-    );
+    return {
+      mode: live ? "live" : "dry",
+      promptVersion,
+      promptSha256: digest(instructions),
+      questions: questions.map((q) => q.id),
+      sharedBuildMs,
+      buildMs: views.buildMs,
+      retrieval,
+      ...run,
+    };
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+}
+
+async function checkRetrieval() {
+  const first = await runFixture("--retrieval");
+  const second = await runFixture("--retrieval");
+  for (const trial of [first, second]) {
+    assert.equal(trial.externalModelCalls, 0);
+    assert.equal(trial.crossScopeCollisionRejected, true);
+    assert.equal(trial.results.length, questions.length * arms.length);
+    for (const row of trial.results) {
+      const label = `${row.arm}/${row.question}`;
+      assert.equal(
+        row.candidateWrongScope + row.wrongScope,
+        0,
+        `Cross-project evidence in ${label}`,
+      );
+      assert.equal(
+        row.candidateUnresolved + row.unresolved,
+        0,
+        `Unresolved revision in ${label}`,
+      );
+      assert.ok(
+        row.selectedRefs.length > 0 &&
+          row.selectedRefs.length <= trial.budget.topK,
+        `Invalid topK in ${label}`,
+      );
+      assert.equal(
+        row.resolvedRefs,
+        row.selectedRefs.length,
+        `Duplicate or unresolved citation in ${label}`,
+      );
+      assert.ok(
+        row.contextBytes <= trial.budget.contextBytes,
+        `Context budget exceeded in ${label}`,
+      );
+    }
+  }
+  const stable = (trial) =>
+    trial.results.map((row) => ({ ...row, retrievalMs: null }));
+  assert.deepEqual(
+    stable(first),
+    stable(second),
+    "Fresh fixtures produced different retrieval results",
+  );
+  return {
+    fixture: first.fixture,
+    cases: first.results.length,
+    repetitions: 2,
+    budget: first.budget,
+    scope: "passed",
+    exactReferences: "passed",
+    determinism: "passed",
+    externalModelCalls: 0,
+  };
+}
+
+async function main() {
+  const mode = process.argv[2];
+  assert.ok(
+    process.argv.length === 2 ||
+      (process.argv.length === 3 &&
+        ["--live", "--retrieval", "--check-retrieval"].includes(mode)),
+    "Use default dry run, --retrieval, --check-retrieval, or separately authorized --live",
+  );
+  const result =
+    mode === "--check-retrieval"
+      ? await checkRetrieval()
+      : await runFixture(mode);
+  console.log(JSON.stringify(result, null, 2));
 }
 
 main().catch((error) => {

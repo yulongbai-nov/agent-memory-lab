@@ -14,7 +14,8 @@
     "check:ts-scope": "node scripts/check-ts-scope.cjs",
     "lint:shell": "shellcheck --severity=warning benchmark/harness-e2e/run-public.sh benchmark/harness-e2e/run-trusted.sh",
     "smoke:package": "node scripts/smoke-package.cjs",
-    "benchmark:memory-views": "node benchmark/memory-views/run.cjs"
+    "benchmark:memory-views": "node benchmark/memory-views/run.cjs",
+    "check:memory-retrieval": "node benchmark/memory-views/run.cjs --check-retrieval"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

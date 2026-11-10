@@ -10,7 +10,7 @@
 | 同步与离线 | CouchDB 中继同步归档记录和引用，原件资产另行保护与核验。网页离线存放用户选择保存的已审核摘要和草稿。 |
 | 派生 | 每日整理和语义候选可从已有归档重建。语义候选经过结构与证据校验，待人复核后才成为决定。 |
 
-ChatGPT 历史摄取、知识图谱、原生深链和远端常在线部署属于单独交付。连接器可见性、合成数据测试和真实私有覆盖分别验收。[数据契约](contract-v0.1.md) · [接入设计](DSH-Codex-integration-v0.1.md) · [本机 SQLite ADR](adr-local-sqlite-index.md)
+已实现可从本机归一化文件读取的 [ChatGPT 快照边界](chatgpt-snapshot-v1.md) 和 [小型本体投影](ontology-projection-v0.1.md)，均使用合成资料验收。原始导出转换、真实 ChatGPT 回填、图谱生产运行、原生深链和远端常在线部署分别验收。[数据契约](contract-v0.1.md) · [接入设计](DSH-Codex-integration-v0.1.md) · [本机 SQLite ADR](adr-local-sqlite-index.md)
 
 ## 逐步迁移
 

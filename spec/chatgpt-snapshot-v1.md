@@ -26,3 +26,7 @@ The input is a UTF-8 JSON object with exactly these fields:
 The adapter accepts at most 16 MiB per file, 100,000 messages and 1 MiB of text per message. The `--session` must equal the conversation ID. Import is read-only with respect to the snapshot, but writes normalized text to the selected private archive. Treat snapshots and archives as sensitive. Checkpoints bind to the exact input file bytes; resuming after any change is rejected. Import a changed snapshot under a separate source identity until a reviewed incremental update protocol exists.
 
 Run `npm run build`, then `node bin/memory.cjs ingest --source chatgpt --file SNAPSHOT --instance INSTANCE --session CONVERSATION_ID --project PROJECT --dir PRIVATE_DIRECTORY`. Use `--max-records` and `--batch-size` to bound each run. Repeat the same command against the immutable normalized file to resume.
+
+## Conversion boundary
+
+Connector pagination is separate from the archive checkpoint. Preserve account scope, active and archived catalog coverage, and opaque cursors on the capture side. A sampled connector envelope contains newest-first turn pages with item-level truncation. Verify timestamp units and supported item types before normalization. A longer capture of the same item may be completion of a partial projection. The adapter does not infer an edit or decision change from that difference. An official export still needs validation against an actual file format before a converter can be accepted.

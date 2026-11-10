@@ -5,6 +5,7 @@ const legacyJavaScript = require("./legacy-js-scope.json");
 
 const typescript = [
   "src/chatgpt-snapshot.cts",
+  "src/ontology-projection.cts",
   "src/semantic-queue.cts",
   "src/semantic-validation.cts",
 ];
@@ -12,10 +13,12 @@ const lintedJavaScript = [
   "eslint.config.mjs",
   "lib/adapters/chatgpt-snapshot.cjs",
   "lib/codex-discovery.cjs",
+  "lib/ontology-projection.cjs",
   "scripts/check-ts-scope.cjs",
   "scripts/smoke-package.cjs",
   "tests/chatgpt-snapshot.test.cjs",
   "tests/codex-discovery.test.cjs",
+  "tests/ontology-projection.test.cjs",
 ];
 const files = execFileSync(
   "git",

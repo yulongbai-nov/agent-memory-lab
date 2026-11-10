@@ -7,6 +7,7 @@ export default defineConfig([
   {
     files: [
       "src/chatgpt-snapshot.cts",
+      "src/ontology-projection.cts",
       "src/semantic-validation.cts",
       "src/semantic-queue.cts",
     ],
@@ -19,10 +20,12 @@ export default defineConfig([
       "eslint.config.mjs",
       "lib/adapters/chatgpt-snapshot.cjs",
       "lib/codex-discovery.cjs",
+      "lib/ontology-projection.cjs",
       "scripts/check-ts-scope.cjs",
       "scripts/smoke-package.cjs",
       "tests/chatgpt-snapshot.test.cjs",
       "tests/codex-discovery.test.cjs",
+      "tests/ontology-projection.test.cjs",
     ],
     extends: [js.configs.recommended],
     linterOptions: { noInlineConfig: true },

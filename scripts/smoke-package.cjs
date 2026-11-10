@@ -38,6 +38,12 @@ async function main() {
       join(installed, "lib", "semantic-validation.cjs"),
     );
     const queue = require(join(installed, "lib", "semantic-queue.cjs"));
+    const snapshot = require(
+      join(installed, "lib", "adapters", "chatgpt-snapshot.cjs"),
+    );
+    const ontology = require(join(installed, "lib", "ontology-projection.cjs"));
+    assert.equal(typeof snapshot.readChatgptSnapshot, "function");
+    assert.equal(typeof ontology.rebuildProjection, "function");
     const reference = { source: "fixture", item: "item", version: "revision" };
     const candidates = validation.validateCandidates(
       {

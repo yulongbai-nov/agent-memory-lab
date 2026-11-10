@@ -12,6 +12,7 @@
     "types": ["node"]
   },
   "files": [
+    "src/ontology-projection.cts",
     "src/chatgpt-snapshot.cts",
     "src/semantic-validation.cts",
     "src/semantic-queue.cts"

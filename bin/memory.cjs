@@ -8,7 +8,7 @@ const { randomUUID } = require('node:crypto');
 const options = Object.fromEntries([
   'dir', 'owner', 'project', 'keyword', 'from', 'to', 'limit', 'id', 'revision',
   'source', 'file', 'instance', 'session', 'max-records', 'batch-size', 'port',
-  'kind', 'text', 'manifest', 'target', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time'
+  'kind', 'text', 'manifest', 'target', 'evidence', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time', 'serve-origin', 'serve-tailnet-user'
 ].map(name => [name, { type: 'string' }]));
 options.recent = { type: 'boolean' };
 options['local-draft'] = { type: 'boolean' };
@@ -29,11 +29,11 @@ Commands:
   coverage
   migrate-index
   export-index
-  annotate --target CITATION_JSON --kind note|correction|decision|change|todo --text TEXT [--id RETRY_ID]
+  annotate --target CITATION_JSON --kind note|correction|decision|change|todo --text TEXT [--id RETRY_ID] [--evidence CITATION_JSON]
   watch --manifest PRIVATE_JSON [--interval SECONDS] [--runs N]
   semantic-status
   daily [--manifest PRIVATE_JSON] [--local-draft]
-  serve [--port PORT]
+  serve [--port PORT] [--serve-origin HTTPS_ORIGIN --serve-tailnet-user LOGIN]
   mcp [--allow-annotations]
   sync --couch-url URL [--sync-mode annotations|pull|all]
   provision-hub --couch-url URL
@@ -136,6 +136,7 @@ async function main() {
     case 'annotate': {
       const fields = Object.fromEntries(['topic', 'basis', 'lifecycle'].filter(key => values[key] !== undefined).map(key => [key, values[key]]));
       if (values.revises) fields.revises = values.revises;
+      if (values.evidence !== undefined) fields.evidence = JSON.parse(values.evidence);
       if (values['valid-time']) fields.valid_time = values['valid-time'];
       result = await op.annotate({ ...fields, target: JSON.parse(values.target), kind: values.kind, text: values.text, id: values.id || randomUUID() });
       break;
@@ -174,7 +175,7 @@ async function main() {
     }
     case 'serve': {
       const { createWebServer } = require('../lib/web/server.cjs');
-      const app = createWebServer({ archive: op.archive, ...op.scope, host: '127.0.0.1', port: positiveInt(values.port, 65535) || 8787 });
+      const app = createWebServer({ archive: op.archive, ...op.scope, host: '127.0.0.1', port: positiveInt(values.port, 65535) || 8787, externalOrigin: values['serve-origin'], allowedTailnetUser: values['serve-tailnet-user'] });
       const address = await app.listen();
       console.log('http://127.0.0.1:' + address.port);
       return;

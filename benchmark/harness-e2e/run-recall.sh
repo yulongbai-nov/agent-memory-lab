@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+ARCHIVE=${1:?synthetic archive directory required}
+[ -f "$ARCHIVE/.synthetic-harness-fixture" ] || { echo 'BLOCKED: synthetic fixture marker required'; exit 1; }
+IMAGE=agent-memory-lab-codex-synthetic:0.165.0
+FIXTURE_IMAGE="agent-memory-lab-fixture:$(node -e 'process.stdout.write(require("node:crypto").randomBytes(12).toString("hex"))')"
+CONTAINER=
+cleanup() { if [ -n "$CONTAINER" ]; then docker rm -f "$CONTAINER" >/dev/null 2>&1 || true; fi; docker image rm "$FIXTURE_IMAGE" >/dev/null 2>&1 || true; }
+trap cleanup EXIT INT TERM
+docker build -f "$ROOT/benchmark/harness-e2e/codex/Dockerfile" -t "$IMAGE" "$ROOT/benchmark/harness-e2e/codex"
+CONTAINER=$(docker create --network none --entrypoint sh "$IMAGE" -c 'chown -R 0:0 /archive /memory; chmod 700 /archive')
+for item in lib bin node_modules package.json; do docker cp "$ROOT/$item" "$CONTAINER:/memory/" >/dev/null; done
+docker cp "$ARCHIVE/." "$CONTAINER:/archive/" >/dev/null
+docker start -a "$CONTAINER"
+docker commit "$CONTAINER" "$FIXTURE_IMAGE" >/dev/null
+docker rm "$CONTAINER" >/dev/null
+CONTAINER=
+docker run --rm --network none --read-only --tmpfs /tmp:mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/recall.cjs

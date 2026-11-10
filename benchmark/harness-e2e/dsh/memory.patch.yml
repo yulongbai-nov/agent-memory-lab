@@ -1,0 +1,12 @@
+# Synthetic container mounts: repository at /memory and test archive at /archive.
+- insert:
+    - id: mcp-synthetic-memory
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: memory
+        transport: stdio
+        command: node
+        args: ['/memory/bin/memory.cjs', 'mcp', '--dir', '/archive', '--owner', 'synthetic', '--project', 'release']
+        failOnStartupError: true
+        reconnect:
+          enabled: false

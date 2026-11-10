@@ -149,14 +149,14 @@ async function main() {
       const runs = positiveInt(values.runs, 10000) || Infinity;
       for (let round = 0; round < runs; round++) {
         const manifest = JSON.parse(await readFile(values.manifest, 'utf8'));
-        const collector = {sessionsAttempted:0,sessionsFailed:0,itemsImported:0,pending:0,blocked:0,baselines:0,skippedForBackfill:0,skippedForCapacity:0};
+        const collector = {sessionsAttempted:0,sessionsFailed:0,itemsImported:0,pending:0,blocked:0,unverifiable:0,baselines:0,skippedForBackfill:0,skippedForCapacity:0};
         let usedCollector = false;
         const stats = await ingestManifest(manifest, async input => {
           if (input.incremental === true) {
             if (!input.root) throw new Error('Collector requires a source root');
             usedCollector = true;
             const result = await require('../lib/collector.cjs').collectChanged(op,input,ingest);
-            for (const k of ['sessionsAttempted','sessionsFailed','itemsImported','pending','blocked']) collector[k] += result[k];
+            for (const k of ['sessionsAttempted','sessionsFailed','itemsImported','pending','blocked','unverifiable']) collector[k] += result[k] || 0;
             collector.baselines += Number(result.baseline); collector.skippedForBackfill += Number(result.skippedForBackfill); collector.skippedForCapacity += Number(result.skippedForCapacity);
             return result;
           }

@@ -1,0 +1,31 @@
+'use strict';
+const test=require('node:test'),assert=require('node:assert/strict');
+const fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os');
+const {execFileSync}=require('node:child_process');
+const {dailyReview}=require('../lib/daily.cjs');
+test('daily local draft is opt-in, bounded, and failure leaves deterministic snapshot intact',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'daily-local-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const scope={owner:'o',project:'p'};
+ const op={dir,scope,archive:{dir,listVersionSummaries:async()=>[],listAnnotations:async()=>[],listItems:async()=>[]},find:async()=>({topics:[]}),current:async()=>[]};
+ let calls=0; const runner=async args=>{calls++;assert.deepEqual(args,{dir,...scope});return {status:'validated',modelCalls:1,candidates:2,cacheHit:false,exactReferences:3,stats:{wallSeconds:1.5,leak:'SECRET CANDIDATE'},privateText:'SECRET CANDIDATE'};};
+ const now=()=>Date.parse('2026-01-01T00:00:00Z');
+ const base=await dailyReview(op,[],async()=>({itemsImported:0}),{now,localDraftRunner:runner});
+ assert.equal(calls,0);assert.equal(base.localModelCalls,0);assert.equal(base.externalModelCalls,0);assert.equal(base.modelCalls,0);
+ const draft=await dailyReview(op,[],async()=>({itemsImported:0}),{now,localDraft:true,localDraftRunner:runner});
+ assert.equal(calls,1);assert.equal(draft.localModelCalls,1);assert.equal(draft.localDraftStatus,'validated');assert.equal(draft.externalModelCalls,0);
+ const files=await fs.readdir(path.join(dir,'derived')); const saved=await fs.readFile(path.join(dir,'derived',files.find(x=>x.endsWith('.json') && !x.startsWith('local-draft-'))),'utf8'); assert.ok(!saved.includes('SECRET CANDIDATE')); const statusFile=path.join(dir,'derived',files.find(x=>x.startsWith('local-draft-'))); const status=JSON.parse(await fs.readFile(statusFile,'utf8')); assert.equal(status.status,'validated'); assert.equal(status.localDraftCandidates,2); assert.equal(status.localDraftCacheHit,false); assert.equal(status.localDraftStats.wallSeconds,1.5); assert.ok(!JSON.stringify(status).includes('SECRET')); assert.equal((await fs.stat(statusFile)).mode & 0o077,0);
+ const failed=await dailyReview(op,[],async()=>({itemsImported:0}),{now,localDraft:true,localDraftRunner:async()=>{throw Error('private failure');}});
+ assert.equal(failed.localDraftStatus,'retryable');assert.equal(failed.localModelCalls,0);assert.equal(failed.modelCalls,0);assert.ok(!JSON.stringify(failed).includes('private failure'));assert.equal(failed.snapshotChanged,false);
+ await fs.rm(statusFile); await fs.mkdir(statusFile);
+ const saveFailure=await dailyReview(op,[],async()=>({itemsImported:0}),{now,localDraft:true,localDraftRunner:runner});
+ assert.equal(saveFailure.localDraftStatus,'retryable'); assert.equal(saveFailure.localModelCalls,1); assert.equal(saveFailure.snapshotChanged,false);
+});
+test('launch agent enables local draft only when requested for daily',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'daily-launch-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const manifest=path.join(dir,'manifest.json');await fs.writeFile(manifest,'[]');
+ const bin=path.join(__dirname,'../bin/daily-launchd.cjs');
+ const args=[bin,'--dir',dir,'--manifest',manifest,'--project','p'];
+ const make=(extra=[])=>execFileSync(process.execPath,[...args,...extra],{encoding:'utf8',stdio:['ignore','pipe','ignore']});
+ assert.ok(!make().includes('--local-draft'));assert.ok(make(['--local-draft']).includes('--local-draft'));
+ assert.throws(()=>make(['--local-draft','--interval-seconds','60']));
+});

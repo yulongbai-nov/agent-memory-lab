@@ -13,10 +13,13 @@ function xml(value) {
 
 async function main() {
   const fields = ['dir', 'manifest', 'project', 'owner', 'hour', 'minute', 'interval-seconds', 'label'];
-  const { values } = parseArgs({ options: Object.fromEntries(fields.map(key => [key, { type: 'string' }])) });
+  const options = Object.fromEntries(fields.map(key => [key, { type: 'string' }]));
+  options['local-draft'] = { type: 'boolean' };
+  const { values } = parseArgs({ options });
   if (!values.dir || !values.manifest || !values.project) throw new Error('Specify --dir, --manifest, and --project.');
   const interval = values['interval-seconds'] === undefined ? null : Number(values['interval-seconds']);
   const collector = interval !== null;
+  if (collector && values['local-draft']) throw new Error('Local drafts require daily scheduling.');
   const label = values.label || (collector ? 'local.agent-memory-lab.collector' : 'local.agent-memory-lab.daily');
   const hour = Number(values.hour ?? 3), minute = Number(values.minute ?? 0);
   if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) throw new Error('Invalid local schedule.');
@@ -36,7 +39,8 @@ async function main() {
     join(__dirname, 'memory.cjs'), collector ? 'watch' : 'daily',
     '--dir', resolve(values.dir), '--project', values.project,
     '--owner', values.owner || 'local', '--manifest', manifest,
-    ...(collector ? ['--runs', '1'] : [])
+    ...(collector ? ['--runs', '1'] : []),
+    ...(!collector && values['local-draft'] ? ['--local-draft'] : [])
   ];
   process.stdout.write(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

@@ -11,6 +11,7 @@ const options = Object.fromEntries([
   'kind', 'text', 'manifest', 'target', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time'
 ].map(name => [name, { type: 'string' }]));
 options.recent = { type: 'boolean' };
+options['local-draft'] = { type: 'boolean' };
 options.help = { type: 'boolean', short: 'h' };
 options['allow-annotations'] = { type: 'boolean' };
 
@@ -31,7 +32,7 @@ Commands:
   annotate --target CITATION_JSON --kind note|correction|decision|change|todo --text TEXT [--id RETRY_ID]
   watch --manifest PRIVATE_JSON [--interval SECONDS] [--runs N]
   semantic-status
-  daily [--manifest PRIVATE_JSON]
+  daily [--manifest PRIVATE_JSON] [--local-draft]
   serve [--port PORT]
   mcp [--allow-annotations]
   sync --couch-url URL [--sync-mode annotations|pull|all]
@@ -168,7 +169,7 @@ async function main() {
     case 'daily': {
       const { dailyReview } = require('../lib/daily.cjs');
       const manifest = values.manifest ? JSON.parse(await readFile(values.manifest, 'utf8')) : [];
-      result = await dailyReview(op, manifest, input => input.root ? require('../lib/intake.cjs').intakeDirectory(op, input, ingest) : ingest(op, input));
+      result = await dailyReview(op, manifest, input => input.root ? require('../lib/intake.cjs').intakeDirectory(op, input, ingest) : ingest(op, input), {localDraft:values['local-draft'] === true});
       break;
     }
     case 'serve': {

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdir, mkdtemp, readdir, rm } = require('node:fs/promises');
+const { mkdir, mkdtemp, readdir, readFile, rm, stat } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { runLocalDerive, selectLocalBatch } = require('../lib/local-derive.cjs');
@@ -20,7 +20,7 @@ test('synthetic local cache validates output, retries failure and isolates injec
     async runLocalLlama({prompt}) {
       calls++;
       const [{source,item,version,text}] = JSON.parse(prompt.split('\n').at(-1));
-      return {output: JSON.stringify({candidates:[{kind:'decision',claim:'Example',evidence:[
+      return {output: JSON.stringify({candidates:[{kind:'decision',claim:'Example ![image](https://example.invalid/a) <img src=x> www.example.invalid',evidence:[
         {source,item,version,quote:calls === 1 ? 'not present' : text}
       ]}]}),stats:{wallSeconds:1,peakObservedRssMiB:2}};
     }
@@ -37,6 +37,16 @@ test('synthetic local cache validates output, retries failure and isolates injec
   assert.equal(calls,2);
   assert(!(await readdir(join(dir,'local-derive'))).some(file => file.startsWith('latest-')));
   assert(!JSON.stringify(success).includes('Example'));
+  const drafts = (await readdir(join(dir,'local-derive'))).filter(file => file.endsWith('.txt'));
+  assert.equal(drafts.length,1);
+  const draftPath = join(dir,'local-derive',drafts[0]);
+  const draft = await readFile(draftPath,'utf8');
+  assert.equal((await stat(draftPath)).mode & 0o777,0o600);
+  assert.match(draft,/待核实/);
+  assert.match(draft,/msg-001/);
+  assert.match(draft,/作为起点/);
+  assert.doesNotMatch(draft,/<img|https:\/\/|!\[|www\.example/);
+
 });
 
 test('private selector uses only complete scoped messages with local original references', async t => {
@@ -71,6 +81,38 @@ test('private selector uses only complete scoped messages with local original re
   assert.deepEqual(batch.records.map(row=>row.item),['u','a']);
   assert.equal(batch.availability.archived,2);
   assert.equal((await selectLocalBatch(readOnly,{...scope,project:'other'})).records.length,0);
+  const input = {dir,...scope};
+  let calls = 0;
+  const runner = {
+    async prepareLocalModel() { return {fingerprint:'test-model'}; },
+    async runLocalLlama({prompt}) {
+      calls++;
+      const [first] = JSON.parse(prompt.split('\n').at(-1));
+      const {source,item,version,text} = first;
+      return {output:JSON.stringify({candidates:[{kind:'todo',claim:'Draft next step',evidence:[
+        {source,item,version,quote:text}
+      ]}]}),stats:{}};
+    }
+  };
+  const first = await runLocalDerive(input,runner);
+  assert.equal(first.exactReferences,1);
+  assert.equal((await runLocalDerive(input,runner)).modelCalls,0);
+  const writable = await openArchive({dir});
+  await writable.importBatch({scope,source,checkpoint:{previous:1,position:2},items:[
+    {id:'u',kind:'message',role:'user',turnId:'closed',time:'2026-01-02T00:00:00Z',
+      text:'Next step: prepare the updated release notes.',metadata:meta('user/message',1)}
+  ]});
+  const updated = await runLocalDerive(input,runner);
+  assert.equal(updated.exactReferences,1);
+  assert.equal(updated.cacheHit,false);
+  assert.equal(calls,2);
+  const folder = join(dir,'local-derive');
+  const drafts = (await readdir(folder)).filter(file => file.endsWith('.txt'));
+  assert.equal(drafts.length,2);
+  const draftsText = await Promise.all(drafts.map(file => readFile(join(folder,file),'utf8')));
+  assert(draftsText.some(text => text.includes('updated release notes')));
+  assert.equal((await writable.listAnnotations(scope)).length,0);
+
 });
 
 test('local derivation refuses a Git repository nested at its private output path', async t => {

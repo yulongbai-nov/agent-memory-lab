@@ -43,7 +43,7 @@ node bin/memory.cjs serve --project work --port 8787
 
 ## 每日整理
 
-`daily --project work --manifest <private-json>` 接受一个输入数组。每个对象可选择单文件的 `source,file,instance,session` 或目录的 `source,root,instance`，可加 `max-records`、`max-sessions` 和 `offset`。目录条目也可设置 `"recent":true`，优先扫描最近更新的会话。清单为空也可重建当前项目的轻量索引、已复核决定视图和待审队列。运行统计只输出计数，快照留在私有目录的 `derived/`。模型提取和 Skill 草案生成标为待审，当前运行不会发起模型调用。归档、批注和生效决定都未变化时跳过派生写入。已排期的决定过了生效点后，Wiki 在下一次整理刷新，即使没有新增写入。缺乏足够证据时技能候选列表为空。
+`daily --project work --manifest <private-json>` 接受一个输入数组。每个对象可选择单文件的 `source,file,instance,session` 或目录的 `source,root,instance`，可加 `max-records`、`max-sessions` 和 `offset`。目录条目也可设置 `"recent":true`，优先扫描最近更新的会话。清单为空也可重建当前项目的轻量索引、已复核决定视图和待审队列。运行统计只输出计数，快照留在私有目录的 `derived/`。确定性整理阶段不调用模型，外部语义待授权。归档、批注和生效决定都未变化时跳过派生写入。已排期的决定过了生效点后，Wiki 在下一次整理刷新，即使没有新增写入。缺乏足够证据时技能候选列表为空。
 
 macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private-json> --project work` 生成用户 LaunchAgent。默认 03:00，按宿主机本地时区解释。Oslo 宿主对应 03:00 Europe/Oslo。将输出保存到私有 plist、用 `plutil -lint` 检查并用 `launchctl bootstrap gui/$(id -u) <plist>` 安装。已为 `private-acceptance` 私有试点注册 03:00 Europe/Oslo，并经调度器手动触发验证退出码为 0。每轮每端至多处理三份会话，每份最多摄取 40 条记录。预算在最近会话、失败重试和历史回补之间分配，无需人工为后台任务指定 offset。试点清单与派生快照在默认私有根目录的 `acceptance-*/` 子目录。可用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.daily` 停止试点。
 
@@ -69,11 +69,13 @@ macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private
 node bin/local-derive.cjs --dir <private-dir> --owner local --project <project>
 ```
 
-`--synthetic` 用同一公开合成夹具验收，可指定单独的私有空目录。实际构建使用本机现有的 llama.cpp 和 Qwen3.5 4B Q4_K_M。它优先选择已有结束标记的同一轮次内最多五条完整用户或助手预览。会跳过工具、配置、未完成条目、找不到本机原件的记录，以及需要进一步脱敏或超出预算的消息。输入总长上限为 1,500 字节。短引用别名映射回实际来源、条目与版本，再对归档脱敏预览逐字校验。原件可用统计依据本机引用与文件检查。完整原件哈希可通过独立的 `verify-original` 命令校验。
+`--synthetic` 用同一公开合成夹具验收，可指定单独的私有空目录。实际构建使用本机现有的 llama.cpp 和 Qwen3.5 4B Q4_K_M。它优先选择已有结束标记且有决定、变更或下一步线索的轮次，同一轮次最多选取五条完整用户或助手预览。会跳过工具、配置、未完成条目、找不到本机原件的记录，以及需要进一步脱敏或超出预算的消息。输入总长上限为 1,500 字节。短引用别名映射回实际来源、条目与版本，再对归档脱敏预览逐字校验。原件可用统计依据本机引用与文件检查。完整原件哈希可通过独立的 `verify-original` 命令校验。
 
 推理使用命令行，不监听网络。macOS 沙盒拒绝网络、写文件和用户数据目录读取，在这些目录中仅允许读取固定模型和本次私有临时输入。系统运行库仍可读。每次启动前验证禁网和合成文件读取拒绝，失败则停止。两条 CPU 线程，上下文 768 token，输出上限 384 token，最长 60 秒。内存压力与进程常驻内存受监控。提示和临时文件存放在经 Git 工作树校验的私有 `local-derive/` 子目录，目录 0700、文件 0600。若该子目录自身已初始化为 Git 仓库，入口也会拒绝运行。
 
-命令仅打印统计。成功候选另存为档案目录下 `local-derive/latest-*.json`，用本机文件管理器或本地编辑器人工审阅，状态固定为「待核实」。网页和普通 MCP 都不提供这些文件的读取入口。缓存按作用域、输入版本、模型文件 SHA-256 和提示版本区分。校验失败保留待处理状态，无变化时复用成功缓存。03:00 任务尚未启用该阶段，仍做确定性整理。外部私有语义处理继续标记为 `requires-user-consent`，召回基准保持 `gpt-6-luna` low。
+命令仅打印统计。成功候选另存为档案目录下 `local-derive/latest-*.json`，其中的 `draftFile` 指向同目录的 `draft-*.txt`。草稿供本机文件管理器或本地编辑器人工审阅，状态固定为「待核实」，与已确认决定的 Wiki 分开。文本和标记字符会转义，引用以来源、条目、版本和原句显示。网页和普通 MCP 均无候选读取入口。缓存按作用域、输入版本、模型文件 SHA-256 和提示版本区分。校验失败保留待处理状态，无变化时复用成功缓存。
+
+日常确定性整理仍先运行。可为 `daily` 或 `bin/daily-launchd.cjs` 显式添加 `--local-draft`，每次最多处理一个本地批次。代码默认关闭。当前私有试点已在 03:00 的 LaunchAgent 中显式启用，保留原 plist 的私有备份。去掉此参数并重新加载任务即可停用草稿阶段。私有 `derived/local-draft-*.json` 分别记录本地与外部模型调用数、校验状态和安全计数。外部私有语义处理继续标记为 `requires-user-consent`，召回基准保持 `gpt-6-luna` low。
 
 ## 私有 CouchDB 同步
 

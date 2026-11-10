@@ -6,3 +6,10 @@ node_modules/
 .docker-bench/
 benchmark/couchdb-sync/results/
 .DS_Store
+
+# Defense in depth: private runtime storage is rejected in Git worktrees.
+archive.json
+.archive.lock
+.archive-*.tmp
+derived/
+memory-lab-private/

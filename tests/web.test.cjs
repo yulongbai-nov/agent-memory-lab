@@ -1,0 +1,34 @@
+'use strict';
+const test = require('node:test'); const assert = require('node:assert/strict'); const http = require('node:http'); const {createWebServer} = require('../lib/web/server.cjs');
+test('local server rejects untrusted host, origin and write tokens', async t => {
+ const row={scope:{owner:'a',project:'p'},source:{harness:'h',instance:'i',session:'s'},versionId:'v',item:{id:'x',kind:'message',text:'<script>alert(1)</script>'}}; let writes=0;
+ const archive={listItems:async()=>[row],getItem:async ({owner,project})=>owner==='a' && project==='p' ? row : {scope:{owner,project},versionId:'secret-v',item:{id:'secret',text:'secret'}},listAnnotations:async()=>[],addAnnotation:async x=>{writes++; return x;}};
+ const web=createWebServer({archive,owner:'a',project:'p'}); const {port}=await web.listen(); t.after(()=>web.close()); const base=`http://127.0.0.1:${port}`;
+ const get=await fetch(base); const html=await get.text(); const token=html.match(/name="csrf" content="([^"]+)/)[1]; assert.equal(get.headers.get('cache-control'),'no-store'); new (require('node:vm').Script)(await (await fetch(base+'/app.js')).text());
+ assert.equal((await fetch(base+'/api/find',{headers:{Origin:'https://evil.example'}})).status,403);
+ const hostStatus=await new Promise((resolve,reject)=>{const req=http.get(base,{headers:{Host:'evil.example'}},r=>{r.resume();resolve(r.statusCode)});req.on('error',reject)}); assert.equal(hostStatus,403);
+ const attack = new URLSearchParams({citation:JSON.stringify({id:'secret',revision:'secret-v',owner:'other',project:'other'})}); assert.equal((await fetch(base+'/api/evidence?'+attack)).status,400);
+ const citation={id:'x',revision:'v',source:row.source}; const body=JSON.stringify({kind:'annotation',text:'fix',target:citation,owner:'other',project:'other'});
+ assert.equal((await fetch(base+'/api/annotations',{method:'POST',headers:{'Content-Type':'application/json',Origin:base},body})).status,403);
+ assert.equal((await fetch(base+'/api/annotations',{method:'POST',headers:{'Content-Type':'application/json',Origin:base,'X-CSRF-Token':token},body})).status,201); assert.equal(writes,1);
+ assert.throws(()=>createWebServer({archive,owner:'a',project:'p',host:'0.0.0.0'}));
+});
+test('real archive review POST is scoped and retries idempotently', async t => {
+ const fs=require('node:fs/promises'), os=require('node:os'),path=require('node:path'), {openArchive}=require('../lib/archive.cjs'); const dir=await fs.mkdtemp(path.join(os.tmpdir(),'memory-web-')); t.after(()=>fs.rm(dir,{recursive:true,force:true})); const archive=await openArchive({dir}); const source={harness:'h',instance:'i',session:'s'};
+ for (const project of ['p','secret']) await archive.importBatch({scope:{owner:'a',project},source,checkpoint:{position:1},items:[{id:project,kind:'message',text:project}]});
+ const web=createWebServer({archive,owner:'a',project:'p'}), {port}=await web.listen(); t.after(()=>web.close()); const base=`http://127.0.0.1:${port}`, session=await (await fetch(base+'/api/session')).json(); const items=await archive.listItems({owner:'a',project:'p'}), other=await archive.listItems({owner:'a',project:'secret'}); const target={id:'p',revision:items[0].versionId,source};
+ const headers={'Content-Type':'application/json',Origin:base,'X-CSRF-Token':session.csrf}, id='12345678-1234-1234-1234-123456789abc', body=JSON.stringify({id,kind:'decision',text:'Reviewed',target});
+ assert.equal((await fetch(base+'/api/annotations',{method:'POST',headers,body})).status,201); assert.equal((await fetch(base+'/api/annotations',{method:'POST',headers,body})).status,201); assert.equal((await archive.listAnnotations({owner:'a',project:'p'})).length,1);
+ const attack={id:'secret',revision:other[0].versionId,source,owner:'a',project:'secret'}; assert.equal((await fetch(base+'/api/evidence?'+new URLSearchParams({citation:JSON.stringify(attack)}))).status,400); assert.equal((await fetch(base+'/api/annotations',{method:'POST',headers,body:JSON.stringify({kind:'annotation',text:'x',target:attack})})).status,400);
+ const post=async data => fetch(base+'/api/annotations',{method:'POST',headers,body:JSON.stringify(data)});
+ const correction={id:'22345678-1234-1234-1234-123456789abc',kind:'correction',text:'Corrected',target,revises:id};
+ assert.equal((await post({...correction,revises:undefined})).status,400); assert.equal((await post(correction)).status,201);
+ let current=await (await fetch(base+'/api/current')).json(); assert.equal(current[0].text,'Corrected');
+ const change={id:'32345678-1234-1234-1234-123456789abc',kind:'change',text:'Before',target,revises:id,valid_time:'2020-01-01T00:00:00Z'};
+ // The original review has no effective time; a separate timed pair tests ordering.
+ const timed={id:'42345678-1234-1234-1234-123456789abc',kind:'decision',text:'Timed',target,topic:'timed',valid_time:'2025-01-01T00:00:00Z'};
+ assert.equal((await post(timed)).status,201); assert.equal((await post({...change,topic:'timed',revises:timed.id})).status,201);
+ current=await (await fetch(base+'/api/current?topic=timed')).json(); assert.equal(current[0].label,'待核实');
+ assert.equal((await post({...correction,id:'52345678-1234-1234-1234-123456789abc',topic:'other',revises:timed.id})).status,400);
+ const shell=await (await fetch(base+'/offline-shell')).text(); assert.doesNotMatch(shell,/name="csrf"/); const sw=await (await fetch(base+'/sw.js')).text(); new (require('node:vm').Script)(sw); assert.doesNotMatch(sw,/\/api\//);
+});

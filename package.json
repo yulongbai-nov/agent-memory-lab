@@ -1,1 +1,1 @@
-{"name":"agent-memory-lab","version":"0.1.0","private":true,"scripts":{"test":"node tests/validate.js"},"dependencies":{"ajv":"8.17.1","ajv-formats":"3.0.1"}}
+{"name":"agent-memory-lab","version":"0.1.0","private":true,"scripts":{"test":"node tests/validate.js && node tests/adapters.cjs && node --test tests/*.test.cjs"},"dependencies":{"@modelcontextprotocol/sdk":"1.32.2","ajv":"8.17.1","ajv-formats":"3.0.1"},"bin":{"agent-memory-lab":"bin/memory.cjs"},"engines":{"node":">=24"}}

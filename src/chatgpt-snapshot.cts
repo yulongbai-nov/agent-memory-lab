@@ -16,6 +16,8 @@ interface Source extends Identity {
   representation: string;
   coverage: {
     complete: boolean;
+    completenessScope: "normalized-file";
+    accountCoverage: "unverified";
     branchesComplete: boolean;
     attachmentsComplete: boolean;
     truncatedItems: number;
@@ -60,6 +62,7 @@ interface Snapshot {
 interface ArchiveIdentity {
   sourceIdentity: (input: Identity) => Identity;
   checkpointRevision: (checkpoint: Checkpoint | null) => string | null;
+  scrubText: (text: string) => string;
 }
 const hash = (data: string | Buffer): string =>
   createHash("sha256").update(data).digest("hex");
@@ -205,7 +208,7 @@ function parseSnapshot(value: unknown): Snapshot {
 }
 async function* readChatgptSnapshot(
   opts: Options,
-  { sourceIdentity, checkpointRevision }: ArchiveIdentity,
+  { sourceIdentity, checkpointRevision, scrubText }: ArchiveIdentity,
 ) {
   if (
     !opts ||
@@ -279,6 +282,8 @@ async function* readChatgptSnapshot(
       representation: snapshot.representation,
       coverage: {
         complete: gaps.length === 0,
+        completenessScope: "normalized-file",
+        accountCoverage: "unverified",
         branchesComplete: snapshot.conversation.branches_complete,
         attachmentsComplete: snapshot.conversation.attachments_complete,
         truncatedItems,
@@ -294,7 +299,7 @@ async function* readChatgptSnapshot(
         id: `chatgpt-message-v1:${hash(JSON.stringify([identity.session, message.id]))}`,
         kind: "message",
         role: message.role,
-        ...(message.truncated ? {} : { text: message.text }),
+        ...(message.truncated ? {} : { text: scrubText(message.text) }),
         time: message.created_at,
         metadata: {
           adapterVersion: "chatgpt-snapshot-v1",

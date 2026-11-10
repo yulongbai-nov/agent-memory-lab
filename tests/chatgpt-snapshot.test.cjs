@@ -131,6 +131,8 @@ test("rejects unknown shape and distinguishes normalized export completeness", a
   const batches = [];
   for await (const batch of readChatgptSnapshot(opts)) batches.push(batch);
   assert.equal(batches[0].source.coverage.complete, true);
+  assert.equal(batches[0].source.coverage.completenessScope, "normalized-file");
+  assert.equal(batches[0].source.coverage.accountCoverage, "unverified");
   assert.equal(batches[0].source.representation, "official-export-normalized");
 });
 
@@ -191,14 +193,18 @@ test("rejects unsafe files, invalid encodings and impossible timestamps without 
   await assert.rejects(read(file), /Invalid/);
 });
 
-test("CLI import exposes exact evidence as source-only with no originals", async (t) => {
+test("CLI import preserves the input and exposes only scrubbed source-only evidence", async (t) => {
   const { spawnSync } = require("node:child_process");
   const { createQuery } = require("../lib/query.cjs");
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "chatgpt-cli-test-"));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, "snapshot.json"),
     archiveDir = path.join(dir, "archive");
-  await fs.writeFile(file, JSON.stringify(fixture()));
+  const snapshot = fixture();
+  snapshot.messages[0].text =
+    "synthetic 1 token=fixture-secret /Users/synthetic/private.txt";
+  const original = JSON.stringify(snapshot);
+  await fs.writeFile(file, original, { mode: 0o600 });
   const args = [
     "bin/memory.cjs",
     "ingest",
@@ -227,7 +233,7 @@ test("CLI import exposes exact evidence as source-only with no originals", async
     owner: "synthetic",
     project: "fixture",
   });
-  const record = rows.find((row) => row.item.text === "synthetic 1");
+  const record = rows.find((row) => row.item.text?.startsWith("synthetic 1"));
   assert(record);
   const query = createQuery(archive);
   const evidence = await query.evidence({
@@ -237,9 +243,10 @@ test("CLI import exposes exact evidence as source-only with no originals", async
     revision: record.versionId,
     source: record.source,
   });
-  assert.equal(evidence.text, "synthetic 1");
+  assert.equal(evidence.text, "synthetic 1 token=[REDACTED] [PRIVATE_PATH]");
   assert.equal(evidence.original.availability, "source-only");
   assert.equal(evidence.metadata.originalBytes, false);
+  assert.equal(await fs.readFile(file, "utf8"), original);
   await assert.rejects(
     fs.stat(path.join(archiveDir, "originals")),
     (error) => error.code === "ENOENT",

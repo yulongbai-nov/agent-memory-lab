@@ -28,6 +28,7 @@ Commands:
   coverage
   annotate --target CITATION_JSON --kind note|correction|decision|change|todo --text TEXT [--id RETRY_ID]
   watch --manifest PRIVATE_JSON [--interval SECONDS] [--runs N]
+  semantic-status
   daily [--manifest PRIVATE_JSON]
   serve [--port PORT]
   mcp [--allow-annotations]
@@ -85,7 +86,7 @@ async function main() {
   if (values.help || !command) return usage();
   if (extra.length) throw new Error('Unexpected positional argument.');
   const { operations } = require('../lib/operations.cjs');
-  const op = await operations({ ...values, readOnly: command === 'mcp' && !values['allow-annotations'] });
+  const op = await operations({ ...values, readOnly: command === 'semantic-status' || (command === 'mcp' && !values['allow-annotations']) });
   const selection = { ...values, limit: positiveInt(values.limit, 100), offset: positiveInt(values.offset, 10000), harness: values.source };
   if (values.source && values.instance && values.session) selection.source = { harness: values.source, instance: values.instance, session: values.session };
   else delete selection.source;
@@ -104,6 +105,11 @@ async function main() {
       break;
     }
     case 'coverage': result = await op.coverage(); break;
+    case 'semantic-status': {
+      const { semanticQueue } = require('../lib/semantic-queue.cjs');
+      result = semanticQueue(await op.archive.listItems(op.scope)).stats;
+      break;
+    }
     case 'annotate': {
       const fields = Object.fromEntries(['topic', 'basis', 'lifecycle'].filter(key => values[key] !== undefined).map(key => [key, values[key]]));
       if (values.revises) fields.revises = values.revises;

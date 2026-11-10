@@ -45,6 +45,14 @@ node bin/memory.cjs serve --project work --port 8787
 
 macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private-json> --project work` 生成用户 LaunchAgent。默认 03:00，按宿主机本地时区解释。Oslo 宿主对应 03:00 Europe/Oslo。将输出保存到私有 plist、用 `plutil -lint` 检查并用 `launchctl bootstrap gui/$(id -u) <plist>` 安装。已为 `private-acceptance` 私有试点注册 03:00 Europe/Oslo，并经调度器手动触发验证退出码为 0。每轮每端至多处理三份会话，每份最多摄取 40 条记录。预算在最近会话、失败重试和历史回补之间分配，无需人工为后台任务指定 offset。试点清单与派生快照在默认私有根目录的 `acceptance-*/` 子目录。可用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.daily` 停止试点。
 
+## 合成语义整理验收
+
+运行 `node bin/semantic-demo.cjs`。需要宿主机已登录的 Codex CLI。入口只接受仓库内哈希已固定的公开夹具 `examples/synthetic.json`，没有路径、项目或自定义输入参数。发送五条合成消息及 `semantic-candidates-v1` 提取说明，夹具中的预期事件不进入提示。临时会话跳过用户配置、记忆、hooks 和宿主 Skill 发现，关闭 shell、网页搜索和 MCP。构建侧固定为 `gpt-6-luna`、`low`，与召回验收分别计量。
+
+每次最多一批，提示上限 4 KiB、结构化回答上限 8 KiB、超时 75 秒。最多四个候选，每条须有一到三处能精确匹配来源、条目、版本和引文的引用。候选全部进入「待核实」结果，独立于归档、当前决定和 Wiki。结构和引用校验用于核对证据链接，语义仍需复核。成功缓存键包括模型、推理强度、固定夹具哈希、含来源版本的提示、提示版本和输出结构。读取缓存时再次校验用量与候选引用。失败不缓存，可以重试，能取得的失败用量单独报告。
+
+私有运行目录可用 `node bin/memory.cjs semantic-status --project work` 查看待处理条数、脱敏预览字节总量和 `requires-user-consent` 状态。该命令只输出统计。03:00 任务更新本地队列和确定性派生，模型调用数为 0。真实会话的外部模型处理须另行获得数据范围和发送授权。
+
 ## 私有 CouchDB 同步
 
 给每个 owner/project 使用专用私有数据库。先通过授权管理员完成单节点初始化、建库和账号角色分配，再使用 `provision-hub --project work --couch-url <database-url>` 安装权限规则。运行时用私有环境注入 `MEMORY_LAB_COUCH_AUTHORIZATION`，URL 不带凭据。管理员仅用于配置，普通设备使用最小角色。非 loopback URL 要求 HTTPS。避免在浏览器、公共日志、shell 历史或公共仓库保存任何账号密钥。

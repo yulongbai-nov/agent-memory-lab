@@ -106,8 +106,9 @@ stage_fixture() {
 }
 stage_fixture "$CODEX_IMAGE" "$FIXTURE_IMAGE" root:root
 stage_fixture "$DSH_IMAGE" "$DSH_FIXTURE_IMAGE" node:node
+# DSH's subprocess loader extracts its packaged native addon to the temp dir.
 dock create --name "$DSH_RECALL" --network "$NETWORK" --user node --memory 2g --cpus 2 --pids-limit 128 \
-  --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:mode=1777 \
+  --cap-drop ALL --security-opt no-new-privileges --read-only --tmpfs /tmp:rw,exec,nosuid,nodev,mode=1777 \
   -e HOME=/tmp -e MEMLAB_PROXY_TOKEN -e MEMLAB_RECALL_MODE=provider \
   --entrypoint node "$DSH_FIXTURE_IMAGE" /opt/dsh-test/recall.cjs >/dev/null
 if ! dock start -a "$DSH_RECALL" || [ "$(dock inspect -f '{{.State.ExitCode}}' "$DSH_RECALL")" != 0 ]; then

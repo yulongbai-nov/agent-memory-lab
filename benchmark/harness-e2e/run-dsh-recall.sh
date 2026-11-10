@@ -17,4 +17,4 @@ docker start -a "$CONTAINER"
 docker commit "$CONTAINER" "$FIXTURE_IMAGE" >/dev/null
 docker rm "$CONTAINER" >/dev/null
 CONTAINER=
-docker run --rm --network none --user 1000:1000 --read-only --tmpfs /tmp:mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/dsh-test/recall.cjs
+docker run --rm --network none --user 1000:1000 --read-only --tmpfs /tmp:rw,exec,mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/dsh-test/recall.cjs

@@ -12,32 +12,37 @@ async function providerRecall(home) {
  const stats=await ready.json();if(stats.requestedModel!=='gpt-6-luna'||stats.requestedEffort!=='low'||!stats.limits)throw Error('proxy');
  const env={PATH:'/usr/local/bin:/usr/bin:/bin',HOME:process.env.HOME,DSH_HOME:home,DSH_TELEMETRY_MODE:'OFF',LANG:'C.UTF-8',OPENAI_API_KEY:token};
  const args=['--profile','headless','--patch','/opt/dsh-test/provider.patch.yml','--patch',patch,'--patch','/opt/dsh-test/recall-provider.patch.yml','--json','--permission-mode','read-only','--approval-policy','never',
-  'Call mcp__memory__memory_timeline for topic Release rehearsal. Return exactly the full next_step text from its todo entry.'];
+  'Use memory_find with keyword release and limit 5, then memory_current and memory_timeline for the selected Release rehearsal topic. Call memory_evidence for both the original citation and effective correction citation returned by memory_current. Return only JSON with string fields topic, decision, next_step, original_revision, correction_revision, original_quote, correction_quote. Copy the reviewed current decision and full todo next_step exactly. Revisions must exactly match the two evidence results; each quote must be a nonempty contiguous excerpt of its corresponding evidence text.'];
  const p=spawn(cli,args,{env,cwd:home,stdio:['ignore','pipe','ignore']});let out='',expired=false;
  const timer=setTimeout(()=>{expired=true;p.kill('SIGKILL');},90000);
  p.stdout.on('data',b=>{out+=b;if(out.length>1048576)p.kill('SIGKILL');});
  const code=await new Promise(resolve=>{p.on('error',()=>resolve(null));p.on('close',resolve);});clearTimeout(timer);
  let events;try{events=out.trim().split('\n').map(line=>JSON.parse(line));}catch{throw Error('events');}
- const calls=events.filter(e=>e.type==='tool_call' && /(?:^|__)memory_timeline$/.test(e.tool||''));
+ const calls=events.filter(e=>e.type==='tool_call' && /(?:^|__)memory_(?:find|current|timeline|evidence)$/.test(e.tool||''));
  const results=events.filter(e=>e.type==='tool_result' && e.status==='completed' && calls.some(c=>c.callId===e.callId));
- const canaries=results.flatMap(e=>typeof e.result==='string'?(e.result.match(/MEMLAB_CANARY_[a-f0-9]{24}/g)||[]):[]);
- const values=[...new Set(canaries)];
- const steps=[];
- function findSteps(value,depth=0){
-  if(depth>8)return;
-  if(typeof value==='string'){try{findSteps(JSON.parse(value),depth+1);}catch{}return;}
-  if(!value||typeof value!=='object')return;
-  if(typeof value.next_step==='string' && /MEMLAB_CANARY_[a-f0-9]{24}/.test(value.next_step))steps.push(value.next_step);
-  for(const child of Object.values(value))findSteps(child,depth+1);
+ function unpack(value,depth=0) {
+  if(depth>8)return null;
+  if(typeof value==='string'){try{return unpack(JSON.parse(value.replace(/^Output:\s*/i,'')),depth+1);}catch{return value;}}
+  if(Array.isArray(value)&&value.length===1&&value[0]?.type==='text')return unpack(value[0].text,depth+1);
+  if(value?.type==='text')return unpack(value.text,depth+1);
+  if(value?.content && !value.rows && !value.topics)return unpack(value.content,depth+1);
+  return value;
  }
- for(const result of results)findSteps(result.result);
- const distinctSteps=[...new Set(steps)];
- const final=events.find(e=>e.type==='final'&&e.reason?.kind==='completed');
- if(code!==0||expired||calls.length!==1||results.length!==1||values.length!==1||distinctSteps.length!==1||typeof final?.text!=='string'||final.text.trim()!==distinctSteps[0]) {
-  console.error(JSON.stringify({event:'provider-recall-incomplete',code,expired,timelineCalls:calls.length,timelineResults:results.length,canaryFound:values.length===1,completed:Boolean(final)}));
-  throw Error('acceptance');
- }
- console.log(JSON.stringify({harness:'dsh',lane:'provider-backed',status:'validated',matchedMcpCalls:1,archiveOnlyCanaryVerified:true}));
+ function valuesFor(name){return calls.filter(c=>c.tool.endsWith('__memory_'+name)||c.tool==='memory_'+name).flatMap(c=>results.filter(r=>r.callId===c.callId).map(r=>unpack(r.result)));}
+ const found=valuesFor('find').find(v=>v?.topics?.length===5&&v.coverage?.has_more&&v.topics.some(t=>t.topic==='Release rehearsal'));
+ const current=valuesFor('current').flat().find(v=>v?.topic==='Release rehearsal'&&v.citation?.revision&&v.effectiveCitation?.revision&&v.citation.revision!==v.effectiveCitation.revision);
+ const evidence=valuesFor('evidence');
+ const original=evidence.find(v=>v?.revision===current?.citation.revision),corrected=evidence.find(v=>v?.revision===current?.effectiveCitation.revision);
+ const next=valuesFor('timeline').flatMap(v=>v?.rows||[]).find(v=>typeof v.next_step==='string'&&/MEMLAB_CANARY_[a-f0-9]{24}/.test(v.next_step));
+ const final=events.find(e=>e.type==='final'&&e.reason?.kind==='completed');let answer;
+ try{answer=JSON.parse(final?.text);}catch{}
+ const valid=code===0&&!expired&&found&&current&&original&&corrected&&next&&answer&&
+  answer.topic==='Release rehearsal'&&answer.decision===current.text&&answer.next_step===next.next_step&&
+  answer.original_revision===original.revision&&answer.correction_revision===corrected.revision&&
+  typeof answer.original_quote==='string'&&answer.original_quote.trim()&&original.text?.includes(answer.original_quote)&&
+  typeof answer.correction_quote==='string'&&answer.correction_quote.trim()&&corrected.text?.includes(answer.correction_quote);
+ if(!valid){console.error(JSON.stringify({event:'provider-recall-incomplete',code,expired,completed:Boolean(final),calls:calls.length,results:results.length,found:Boolean(found),current:Boolean(current),original:Boolean(original),corrected:Boolean(corrected),todo:Boolean(next),answerParsed:Boolean(answer)}));throw Error('acceptance');}
+ console.log(JSON.stringify({harness:'dsh',lane:'provider-backed',status:'validated',matchedMcpCalls:calls.length,archiveOnlyCanaryVerified:true,distinctEvidenceVersions:2}));
 }
 let phase='fixture-access';
 (async()=>{

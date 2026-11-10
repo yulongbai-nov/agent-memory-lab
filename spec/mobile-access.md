@@ -1,34 +1,26 @@
-# 手机使用交接
+# 手机私网入口
 
-DSH 或 Codex 的 Skill/MCP 供宿主上的 Agent 在指定范围内查询记忆。手机浏览器使用独立的网页入口。网页提供安装清单和主屏幕图标，服务仍只监听 Mac 的 `127.0.0.1`。手机上的 `127.0.0.1` 指向手机自己。网页默认只接受本机 Host 和 Origin，可按下文配置单一私网 HTTPS 来源。
+浏览器入口在 Mac 上读取同一私有归档，手机通过受信私网 HTTPS 访问。DSH 与 Codex 的 Skill/MCP 则供宿主 Agent 查询，使用独立的工具入口。网页只监听 Mac 的 IPv4 loopback，浏览器也不需要 CouchDB 凭据。
 
-网页的安装元数据包含独立窗口模式及 192、512 像素图标。获得可安全访问的 HTTPS 地址后，可在 iPhone 上用 Safari 的分享菜单选择“添加到主屏幕”；Android Chrome 可以按浏览器显示的安装或添加到主屏幕入口操作。实际菜单和支持情况取决于设备和浏览器；安装元数据本身不证明可安装或跨设备可用。[Apple 关于主屏幕网页应用](https://developer.apple.com/videos/play/wwdc2023/10120/)、[Chrome 安装指南](https://developer.chrome.com/docs/modern-web-guidance/guides/pwa/install-web-app)。
+## 私网入口的范围
 
-要真正实现手机访问，需要先确定一个受信、可从手机访问的 HTTPS 来源和身份认证方式，并设计该来源到固定范围记忆服务的授权边界。当前程序没有可直接对外部署的登录机制；可选的单一 tailnet 来源模式见下文，但必须依赖受信的 Tailscale Serve 和经过验证的网络策略；不要仅将绑定地址改为局域网地址、公开端口或直接转发现有服务。部署方案必须明确设备身份、会话保护、授权范围、密钥保管和撤销，并单独验证。浏览器不应持有 CouchDB 管理员凭据。
+启动 `serve` 时同时提供 `--serve-origin https://HOST:PORT` 和 `--serve-tailnet-user LOGIN`。使用独立的本机端口，由 Tailscale Serve 转发。应用校验精确 HTTPS Host、Origin、单一登录身份，写入还校验 CSRF。默认本机模式可单独运行。不要为此切换公开 Funnel 或转发 CouchDB。
 
-现有私有 CouchDB hub 只在本机回环地址验证，并非手机网页的访问入口；它负责归档和批注同步，不会自动提供可安装网页、用户登录或 HTTPS。若希望 Mac 离线时仍可访问，可另行选择常在线受信主机，并分别配置受保护的同步服务和网页访问层；这需要用户确定主机及认证方式，不能仅凭现有本机 hub 推断可用。跨主机 TLS、设备权限和实际手机端验收仍未完成。
+Tailscale Serve 会移除传入的身份头并注入已验证身份。应用依赖这个信任边界，Mac 上能直接访问 loopback 的进程也必须可信。应用按 Tailscale 用户授权，同账号其他允许的设备也可能访问。仅限指定手机时，还需核对 tailnet 的设备访问策略。首次申请 HTTPS 证书前确认域名是否可进入公开证书透明度记录。[Tailscale Serve 身份头](https://tailscale.com/docs/features/tailscale-serve#identity-headers) · [HTTPS 证书](https://tailscale.com/docs/how-to/set-up-https-certificates)
 
-现有浏览器离线功能需先在同一浏览器来源打开网页：用户主动保存的已复核摘要及本地草稿可离线使用，原始证据和候选 API 不缓存。重新连接后草稿可用原重试 ID 提交。缓存和草稿依赖浏览器存储及固定来源，清理站点数据会删除它们；跨设备不会自动共享浏览器缓存。应用壳对网关 502、503、504 也尝试使用先前缓存；403 等拒绝响应不会被离线页面掩盖。上述断网行为曾用合成数据在桌面 Chrome 测试，网关错误回退经合成测试，尚未在真实手机或远程 HTTPS 部署验证。
+现有路由应先核对。新入口用独立端口，保留既有 Serve 进程和路由。用合成归档验证 TLS、正确身份、伪造身份拒绝与重启，再启动指定范围的私有归档。Mac 试点已经通过这些服务端检查，实际地址和账号留在私有交接记录。
 
-## 用这台 Mac 作为同步节点
+## 手机操作和离线验收
 
-本次只读检查时，Mac 上 Tailscale 已连接，已有一个手机节点但当时离线；该网络已具备 HTTPS 证书能力。未发现已配置的 Tailscale Serve 网页路由或公开 Funnel 路由，也未发现本机 8787 网页或 5984 CouchDB 监听器。状态会变化；这不证明手机已经获准访问服务，也不证明当前网络策略只允许该手机。未改动网络、开启服务或发布归档。
+1. 在手机的 Tailscale 应用连接与 Mac 相同的获准网络。
+2. Android 用 Chrome 打开交付的私网 HTTPS 地址，在菜单选择安装应用或添加到主屏幕。iOS 可用 Safari 的添加到主屏幕。
+3. 在线查找并选择「保存当前已审核摘要供离线查看」。断开网络后从同一浏览器配置或主屏幕图标重开，核对摘要和草稿。
+4. 恢复网络后检查归档查询，以及草稿使用同一重试 ID 提交一次。
 
-在用户选定的方案中，Mac 可作为现在的同步节点；待选择常在线受信主机后再迁移。Mac 关闭、休眠或断网期间，手机只能使用先前在同一 HTTPS 来源、同一浏览器配置中明确保存的离线摘要与草稿；不能查询新证据或同步新数据。数据先到 Mac 的过程以及手机恢复连接后的同步仍须实测。
+可主动保存已审核摘要和本地草稿。原件与候选接口保持联网查询。离线存储以浏览器配置和固定 HTTPS 来源为边界。清理站点数据会移除本地缓存，迁移来源时须先处理未提交草稿。应用壳对 502、503、504 尝试离线回退，对 403 保留拒绝响应。合成 Chrome 已验证断网重载与重启，真实手机验收另行记录。[Android 网页安装说明](https://developer.chrome.com/docs/modern-web-guidance/guides/pwa/install-web-app) · [Apple 主屏幕网页应用](https://developer.apple.com/videos/play/wwdc2023/10120/)
 
-可行的候选路径是在 Mac 保持应用仅绑定 loopback，由 Tailscale Serve 为指定的本地网页提供仅 tailnet 可访问的 HTTPS。Serve 受 tailnet 访问策略约束，并可向后端提供身份信息；它并不自动证明现有策略只允许用户的手机。[Tailscale Serve 文档](https://tailscale.com/docs/features/tailscale-serve)；[Tailscale 身份说明](https://tailscale.com/docs/concepts/tailscale-identity)。不要使用公开 Funnel，也不要将 CouchDB 管理接口或原始归档目录发布到手机。
+Mac 睡眠、关机或断网期间，手机可查看先前保存的摘要和草稿。常在线远端主机可后续迁移，届时需重新核对来源、访问策略、备份和真机体验。
 
-实施前需完成：
+## 恢复
 
-1. 在手机上连接正确的 tailnet，并核实访问策略只允许预期设备或身份访问指定服务端口；明确如何撤销访问。不能仅凭节点存在或 HTTPS 可用认定授权已经配置好。
-2. 使用下述已实现的单一 HTTPS 外部来源配置，并实测可信代理和身份授权边界。默认 Host、Origin 和 CSRF 检查假定 loopback；CSRF 令牌本身不是登录认证。不得简单放宽检查或信任可由客户端伪造的身份头。
-3. 先使用合成数据启动本机私有 hub 和固定范围网页，以手机验证设备授权、HTTPS、错误来源拒绝、断网重载、离线草稿及重连后仅提交一次；确认无法访问其他范围或原始文件。实际网络与手机验收通过后，再按明确授权接入所需私有范围。
-4. 用户之后选择常在线受信主机并配置 HTTPS、最小权限和备份时，再单独迁移同步节点；迁移浏览器来源可能使旧手机缓存和草稿无法自动带过去，应先安全处理未提交草稿。
-
-### 可选的单一 tailnet 来源模式（尚未启用）
-
-网页新增一项显式配置：启动 `serve` 时同时提供 `--serve-origin https://<精确域名>` 和 `--serve-tailnet-user <精确登录名>`，并选择单独的本机端口。该模式仍仅监听 `127.0.0.1`；请求必须携带匹配的 Host 和单一 Tailscale 登录身份，浏览器写入还须通过精确 Origin 与 CSRF 校验。未指定选项时原有本机模式不变。不要在命令中加入访问令牌或数据库凭据。
-
-此模式依赖可信的 Tailscale Serve 作为**唯一对外代理**。Tailscale 文档说明 Serve 会移除客户端提供的身份头并重新提供来源身份；标记设备不提供用户登录身份，Funnel 也不提供 Serve 身份。[身份头及信任边界](https://tailscale.com/docs/features/tailscale-serve#identity-headers)。其他运行在 Mac 上的本地程序仍能直接连接 loopback 并伪造身份头，因而同机进程必须可信。仅凭应用层头部检查不能证明请求不是来自错误配置的代理或公开 Funnel：必须保持 Funnel 关闭、验证实际 Serve 行为和 tailnet 策略，不可把本模式作为公共互联网服务。身份为 Tailscale 用户级，不单独证明请求来自指定手机；需另用网络策略限制设备，并在实际设备上验证。
-
-上述本机 Tailscale 检查只能表明 HTTPS 能力存在，不能证明该主机已有证书。本次没有请求或签发证书。Tailscale 说明新证书名称可能出现在公开证书透明度记录中；在使用真实主机名申请证书前，需要确认名称披露可接受。[Tailscale HTTPS 说明](https://tailscale.com/docs/how-to/set-up-https-certificates)。本模式目前只经合成 loopback 请求测试，尚未配置真实 Serve 路由或完成手机验证。
+如果私网 HTTPS 有效而网关返回 502，检查该路由对应的本机应用和专属端口，重启该网页服务后复查身份与范围。若要撤销，停用该网页服务并仅移除其自己的 Serve 端口，保留其他路由。归档、原件和设备缓存按各自的保留策略处理。

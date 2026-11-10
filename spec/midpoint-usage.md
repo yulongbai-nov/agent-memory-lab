@@ -2,7 +2,7 @@
 
 ## 宿主机与服务
 
-Node.js 24 是运行要求。CouchDB 可以在容器里运行。已授权的 Codex、DSH 通道应优先留在宿主机；全新容器的 CLI 认证需单独配置。Codex 宿主机已验证通过 ChatGPT 登录并完成合成 MCP 查询；DSH headless 合成运行明确报告缺少提供方凭据。桌面有模型选择器及一份未发送草稿，草稿被保留，桌面新会话与 Remote Host 连通性仍待验证，当前桌面探测等待用户解锁 Mac。原有两端的持久化文件适配器不需要模型或在线登录。
+宿主安装使用 Node.js 24.22.1 和 `npm ci --ignore-scripts && npm run build`。DSH 压缩记录包含连续 Zstandard 帧，导入器在读取前验证解码能力。CouchDB 可以在容器里运行。宿主机 Codex 已用既有登录完成合成 MCP 查询。Linux 隔离任务用独立代理验证 Codex 与 DSH 的模型和记忆查询。宿主 DSH 桌面 profile、Remote Host 和真实手机另行验收。两端的持久化文件导入可离线执行。
 
 运行 `node bin/memory.cjs --help` 查看命令。本机 SQLite 迁移、旧档和回退出口见 [本机索引 ADR](adr-local-sqlite-index.md)。普通查询以只读方式打开已有档案。每条命令都用 `--project` 选定项目，`--owner` 默认 `local`。不同设备应使用不同的 `--dir` 和不同实例标识。目录和归档分别使用 0700 和 0600 权限。CLI 的 `evidence` 会返回所请求归档原文，避免将其重定向到公共 CI、日志和版本控制。
 
@@ -17,6 +17,8 @@ node bin/memory.cjs coverage --project work
 ```
 
 每个根目录按字典顺序枚举，`nextOffset` 可传给 `--offset` 继续。重新扫描同页会读取原有 checkpoint、重叠补扫并尝试修复未解决的坏行。推进断点时同时检查位置和覆盖版本。单个已知文件用 `ingest --file`，用稳定的实例和会话标识。目录模式和单文件模式只有在会话标识一致时才会共享 checkpoint。先用有限页确认覆盖和缺失再扩大导入。明确报告不支持的私有格式、截断和改写缺口。坏行修复会轮转；被截短而找不到的位置仍留在覆盖缺口中。DSH 序号只在补扫读到相应源记录时恢复，未找到的序号继续标为缺失。每日和前台轮询会按最近会话和持久目录游标分配预算，失败的会话保留重试，逐会话复用 checkpoint。手动历史定位仍可用 offset。使用 `watch --manifest <private-json> --interval 60` 可在前台连续补扫。两轮合成验证中，第二轮只摄取新增记录。生命周期 hook 与实时订阅尚未接通。
+
+Codex 的目录清单可同时指定 `root` 和 `archiveRoot`。活跃会话移动到归档目录时，导入器用常规 rollout 文件名和会话头核对身份，继续使用原 checkpoint 和条目键。两处字节完全一致的副本只读取一次。文件不同或两种旧身份都存在时，留待复核。旧身份和原件继续可读。
 
 归档写入和目录摄取使用跨进程锁，竞争时有界等待。新进程异常退出后，系统锁会释放，后续运行可恢复已识别的新版锁标记。无法识别的旧锁标记会保留，需要先核查旧进程状态。并发每日整理对同一范围的派生写入串行执行。
 
@@ -39,7 +41,7 @@ node bin/memory.cjs serve --project work --port 8787
 
 在任一支持 stdio MCP 的宿主注册命令 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认只提供查询，启用 `--allow-annotations` 后可追加批注。共用 Skill 位于 `skills/agent-memory/SKILL.md`，用于查询、引用和复核流程。Codex 常规配置已注册 `agent-memory-synthetic-demo`，实际连通并只提供合成档案查询。共用 Skill 已链接到 Codex 与 DSH 的发现目录，DSH 运行中发现及实际调用待解锁验证。私有档案的日常入口是本机 CLI 和网页，私有输入的模型发送仍待另行授权。
 
-网页绑定 IPv4 loopback。可明确选择缓存最近的已复核目录和下一步，草稿仅在用户点击保存后存于该浏览器。离线重载需要固定端口和原先的浏览器配置。离线原文不可用，重新连接后可以用同一重试 ID 提交草稿。手机需要另做部署与设备验收。见 [手机使用交接](mobile-access.md)。
+网页绑定 IPv4 loopback，可选同一 Mac 的私网 HTTPS 代理。用户可主动保存已复核摘要和下一步，草稿存于同一浏览器。离线重载需要保持原先的浏览器配置和来源。重新连接后可用同一重试 ID 提交草稿。[手机接入与验收](mobile-access.md)
 
 ## 每日整理
 

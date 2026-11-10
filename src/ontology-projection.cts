@@ -1,5 +1,10 @@
 "use strict";
 
+const { readFile, lstat } =
+  require("node:fs/promises") as typeof import("node:fs/promises");
+const { join } = require("node:path") as typeof import("node:path");
+const { createHash } = require("node:crypto") as typeof import("node:crypto");
+
 // A rebuildable view over scoped, explicitly reviewed archive records.
 type Scope = { owner: string; project: string };
 type Source = { harness: string; instance: string; session: string };
@@ -14,7 +19,15 @@ type Version = {
   scope: Scope;
   source: Source;
   versionId: string;
-  item: { id: string; time?: string; timestamp?: string };
+  item: {
+    id: string;
+    text?: string;
+    time?: string;
+    timestamp?: string;
+    metadata?: {
+      original?: { availability?: string; sha256?: string; bytes?: number };
+    };
+  };
 };
 type Review = {
   id: string;
@@ -35,6 +48,8 @@ type Dependency = {
   taskId: string;
   decisionId: string;
   approved: true;
+  evidence: Citation;
+  quote?: string;
 };
 type Node = {
   id: string;
@@ -53,12 +68,21 @@ type Edge = {
   to: string;
   evidence?: SourceRevision;
   effectiveAt?: string | null;
+  quote?: string;
 };
 type Projection = {
   scope: Scope;
   asOf: string;
   nodes: Node[];
   edges: Edge[];
+  revisions: {
+    from: string;
+    to: string;
+    evidence: SourceRevision;
+    effectiveAt: string | null;
+    basis: string;
+    lifecycle: string;
+  }[];
   corrections: {
     id: string;
     target: string;
@@ -69,6 +93,7 @@ type Projection = {
   }[];
 };
 type Archive = {
+  dir?: string;
   listAnnotations: (scope: Scope) => Promise<Review[]>;
   getItem: (
     args: Scope & { id: string; revision: string; source?: Source },
@@ -133,6 +158,7 @@ async function rebuildProjection({
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   const corrections: Projection["corrections"] = [];
+  const revisions: Projection["revisions"] = [];
   const relevant = reviews
     .filter((r) =>
       ["decision", "change", "todo", "correction"].includes(r.kind),
@@ -249,6 +275,15 @@ async function rebuildProjection({
       )
         throw new Error("Correction target mismatch");
       const evidence = r.evidence ? (await resolve(r.evidence)).ref : null;
+      if (
+        evidence &&
+        evidence.id === target.id &&
+        evidence.revision === target.revision &&
+        evidence.source.harness === target.source.harness &&
+        evidence.source.instance === target.source.instance &&
+        evidence.source.session === target.source.session
+      )
+        throw new Error("Correction evidence is not independent");
       corrections.push({
         id: r.id,
         target: prior.id,
@@ -273,19 +308,36 @@ async function rebuildProjection({
         timestamp(change.effectiveAt) < timestamp(prior.effectiveAt)
       )
         throw new Error("Revision precedes target");
-      edges.push({
-        kind: "SUPERSEDES",
-        id: r.id,
-        from: r.id,
+      revisions.push({
+        from: change.id,
         to: prior.id,
         evidence: change.evidence,
         effectiveAt: change.effectiveAt,
+        basis: change.basis,
+        lifecycle: change.lifecycle,
       });
+      if (
+        change.basis === "confirmed" &&
+        change.lifecycle === "active" &&
+        change.effectiveAt &&
+        timestamp(change.effectiveAt) <= at &&
+        prior.basis === "confirmed" &&
+        prior.lifecycle === "active" &&
+        prior.effectiveAt &&
+        timestamp(prior.effectiveAt) <= at
+      ) {
+        edges.push({
+          kind: "SUPERSEDES",
+          id: r.id,
+          from: r.id,
+          to: prior.id,
+          evidence: change.evidence,
+          effectiveAt: change.effectiveAt,
+        });
+      }
     }
   }
-  const parent = new Map(
-    edges.filter((e) => e.kind === "SUPERSEDES").map((e) => [e.from, e.to]),
-  );
+  const parent = new Map(revisions.map((e) => [e.from, e.to]));
   for (const node of nodes) {
     const seen = new Set<string>();
     let cursor: string | undefined = node.id;
@@ -296,6 +348,7 @@ async function rebuildProjection({
     }
   }
   const dependencyIds = new Set<string>();
+  const dependencyPairs = new Set<string>();
   for (const d of dependencies) {
     if (
       !d ||
@@ -315,12 +368,74 @@ async function rebuildProjection({
       decision.kind !== "decision"
     )
       throw new Error("Dangling dependency");
+    const pair = JSON.stringify([d.taskId, d.decisionId]);
+    if (dependencyPairs.has(pair))
+      throw new Error("Duplicate dependency relationship");
+    dependencyPairs.add(pair);
+    const relation = await resolve(d.evidence);
+    if (d.quote !== undefined) {
+      if (
+        !nonempty(d.quote) ||
+        typeof relation.version.item.text !== "string" ||
+        !relation.version.item.text.includes(d.quote)
+      )
+        throw new Error("Dependency quote not found in evidence");
+      const original = relation.version.item.metadata?.original;
+      if (
+        !archive.dir ||
+        original?.availability !== "archived" ||
+        typeof original.sha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(original.sha256) ||
+        !Number.isSafeInteger(original.bytes) ||
+        (original.bytes || 0) < 1 ||
+        (original.bytes || 0) > 1048576
+      )
+        throw new Error("Dependency quote original unavailable");
+      const filename = join(
+        archive.dir,
+        "originals",
+        original.sha256 + ".jsonl",
+      );
+      let bytes: Buffer;
+      try {
+        const info = await lstat(filename);
+        if (
+          !info.isFile() ||
+          info.isSymbolicLink() ||
+          info.size !== original.bytes ||
+          info.mode & 0o077
+        )
+          throw new Error("invalid");
+        bytes = await readFile(filename);
+      } catch {
+        throw new Error("Dependency quote original unavailable");
+      }
+      if (createHash("sha256").update(bytes).digest("hex") !== original.sha256)
+        throw new Error("Dependency quote original invalid");
+      let raw: unknown;
+      try {
+        raw = JSON.parse(bytes.toString("utf8"));
+      } catch {
+        throw new Error("Dependency quote original invalid");
+      }
+      const contains = (value: unknown): boolean =>
+        typeof value === "string"
+          ? value.includes(d.quote as string)
+          : Array.isArray(value)
+            ? value.some(contains)
+            : !!value &&
+              typeof value === "object" &&
+              Object.values(value).some(contains);
+      if (!contains(raw))
+        throw new Error("Dependency quote not found in original");
+    }
     edges.push({
       kind: "DEPENDS_ON",
       id: d.id,
       from: task.id,
       to: decision.id,
-      evidence: task.evidence,
+      evidence: relation.ref,
+      ...(d.quote !== undefined ? { quote: d.quote } : {}),
       effectiveAt: task.effectiveAt,
     });
   }
@@ -333,16 +448,23 @@ async function rebuildProjection({
     edges: edges.sort(
       (a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || byId(a, b),
     ),
+    revisions: revisions.sort((a, b) =>
+      a.from < b.from ? -1 : a.from > b.from ? 1 : 0,
+    ),
     corrections: corrections.sort(byId),
   };
 }
 function answerDependency({
   projection,
   decisionRootId,
+  mode = "as-of",
 }: {
   projection: Projection;
   decisionRootId: string;
+  mode?: "as-of" | "current-known";
 }) {
+  if (mode !== "as-of" && mode !== "current-known")
+    throw new Error("Invalid correction mode");
   const root = projection.nodes.find(
     (n) => n.id === decisionRootId && n.kind === "decision",
   );
@@ -355,7 +477,7 @@ function answerDependency({
     while (id !== root.id) {
       if (seen.has(id)) throw new Error("Revision cycle");
       seen.add(id);
-      const e = edges.find((x) => x.from === id);
+      const e = projection.revisions.find((x) => x.from === id);
       if (!e) return false;
       id = e.to;
     }
@@ -364,7 +486,14 @@ function answerDependency({
   const related = projection.nodes.filter(
     (n) => ["decision", "change"].includes(n.kind) && descendant(n),
   );
-  if (related.some((n) => n.effectiveAt === null))
+  if (
+    related.some(
+      (n) =>
+        n.basis === "confirmed" &&
+        n.lifecycle === "active" &&
+        n.effectiveAt === null,
+    )
+  )
     return { status: "ambiguous", reason: "effective time unavailable" };
   const eligible = related.filter(
     (n) =>
@@ -381,11 +510,17 @@ function answerDependency({
     return { status: "ambiguous", reason: "no unique confirmed decision" };
   const selected = heads[0];
   if (!selected) throw new Error("Missing decision");
-  if (projection.corrections.some((c) => c.target === selected.id))
+  const corrections = projection.corrections.filter(
+    (c) => c.target === selected.id,
+  );
+  if (corrections.length && mode === "as-of")
     return {
       status: "ambiguous",
       reason: "correction effective time unavailable",
     };
+  if (corrections.length > 1)
+    return { status: "ambiguous", reason: "multiple corrections" };
+  const correction = corrections[0];
   const tasks = projection.edges
     .filter((e) => e.kind === "DEPENDS_ON" && e.to === root.id)
     .flatMap((e) => {
@@ -394,7 +529,15 @@ function answerDependency({
         return [];
       if (!task.effectiveAt) return [];
       return timestamp(task.effectiveAt) <= at
-        ? [{ id: task.id, text: task.text, evidence: task.evidence }]
+        ? [
+            {
+              id: task.id,
+              text: task.text,
+              evidence: task.evidence,
+              relationEvidence: e.evidence,
+              ...(e.quote !== undefined ? { relationQuote: e.quote } : {}),
+            },
+          ]
         : [];
     })
     .sort(byId);
@@ -403,7 +546,13 @@ function answerDependency({
       (e) =>
         e.kind === "DEPENDS_ON" &&
         e.to === root.id &&
-        projection.nodes.find((n) => n.id === e.from)?.effectiveAt === null,
+        projection.nodes.some(
+          (n) =>
+            n.id === e.from &&
+            n.lifecycle === "active" &&
+            n.basis === "confirmed" &&
+            n.effectiveAt === null,
+        ),
     )
   )
     return { status: "ambiguous", reason: "task effective time unavailable" };
@@ -411,8 +560,10 @@ function answerDependency({
     status: "resolved",
     decision: {
       id: selected.id,
-      text: selected.text,
+      text: correction?.text || selected.text,
       evidence: selected.evidence,
+      originalEvidence: selected.evidence,
+      effectiveEvidence: correction ? correction.evidence : selected.evidence,
     },
     tasks,
   };

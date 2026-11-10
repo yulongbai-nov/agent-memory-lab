@@ -4,6 +4,7 @@ const test = require("node:test"),
 const fs = require("node:fs/promises"),
   path = require("node:path"),
   os = require("node:os");
+const { originalCapture } = require("../lib/originals.cjs");
 const { openArchive } = require("../lib/archive.cjs"),
   { createQuery } = require("../lib/query.cjs");
 const {
@@ -23,6 +24,19 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
       session: "clarification",
     },
     codex = { harness: "codex", instance: "one", session: "change" };
+  const rawRelation = Buffer.from(
+    JSON.stringify({
+      type: "message",
+      data: {
+        role: "user",
+        text: "The checklist depends on the rehearsal slot.",
+      },
+    }) + "\n",
+  );
+  const originalRelation = await originalCapture(dir)({
+    bytes: rawRelation,
+    coordinate: 3,
+  });
   await a.importBatch({
     scope,
     source: dsh,
@@ -41,6 +55,14 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
         role: "user",
         text: "Prepare the checklist.",
         time: "2026-01-01T10:00:00Z",
+      },
+      {
+        id: "relation",
+        kind: "message",
+        role: "user",
+        text: "The checklist depends on the rehearsal slot.",
+        time: "2026-01-01T10:05:00Z",
+        metadata: { original: originalRelation },
       },
     ],
   });
@@ -79,7 +101,8 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
   const original = await ref("tuesday"),
     correction = await ref("clarify"),
     changed = await ref("wednesday"),
-    task = await ref("task");
+    task = await ref("task"),
+    relation = await ref("relation");
   await a.addAnnotation({
     id: "decision",
     scope,
@@ -123,6 +146,8 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
         taskId: "checklist",
         decisionId: "decision",
         approved: true,
+        evidence: relation,
+        quote: "depends on the rehearsal slot",
       },
     ],
     asOf = "2026-01-01T12:30:00Z";
@@ -145,6 +170,8 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
   assert.equal(result.decision.evidence.revision, changed.revision);
   assert.equal(result.tasks[0].text, "Prepare the checklist");
   assert.equal(result.tasks[0].evidence.revision, task.revision);
+  assert.equal(result.tasks[0].relationEvidence.revision, relation.revision);
+  assert.equal(result.tasks[0].relationQuote, "depends on the rehearsal slot");
   assert.equal(graph.corrections[0].targetEvidence.revision, original.revision);
   assert.equal(graph.corrections[0].evidence.revision, correction.revision);
   assert.equal(graph.corrections[0].effectiveTimeKnown, false);
@@ -157,6 +184,29 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
   assert.equal(
     answerDependency({ projection: early, decisionRootId: "decision" }).status,
     "ambiguous",
+  );
+  const currentKnown = answerDependency({
+    projection: early,
+    decisionRootId: "decision",
+    mode: "current-known",
+  });
+  assert.equal(currentKnown.status, "resolved");
+  assert.equal(currentKnown.decision.text, "Tuesday is rehearsal");
+  assert.equal(
+    currentKnown.decision.originalEvidence.revision,
+    original.revision,
+  );
+  assert.equal(
+    currentKnown.decision.effectiveEvidence.revision,
+    correction.revision,
+  );
+  assert.equal(
+    early.edges.some((e) => e.kind === "SUPERSEDES"),
+    false,
+  );
+  assert.equal(
+    early.revisions.some((e) => e.from === "change"),
+    true,
   );
   // Same fixture through the existing current query and a simple local file baseline; smoke only.
   const q = createQuery(a),
@@ -173,15 +223,81 @@ test("deterministic scoped projection answers a synthetic cross-harness dependen
   const file = path.join(dir, "synthetic-baseline.json");
   await fs.writeFile(
     file,
-    JSON.stringify({ reviews: await a.listAnnotations(scope), dependencies }),
+    JSON.stringify({
+      records: await a.listItems(scope),
+      reviews: await a.listAnnotations(scope),
+      dependencies,
+    }),
   );
   const baseline = JSON.parse(await fs.readFile(file, "utf8"));
-  const selected = baseline.reviews.find((r) => r.id === "change");
+  const sourceFor = (r) =>
+    baseline.records.find(
+      (v) => v.item.id === r.target.id && v.versionId === r.target.revision,
+    );
+  const effective = (r) => r.valid_time || sourceFor(r)?.item.time;
+  const selected = baseline.reviews
+    .filter(
+      (r) =>
+        ["decision", "change"].includes(r.kind) &&
+        r.topic === "Rehearsal" &&
+        (r.basis || "confirmed") === "confirmed" &&
+        effective(r) &&
+        Date.parse(effective(r)) <= Date.parse(asOf),
+    )
+    .sort((x, y) => Date.parse(effective(y)) - Date.parse(effective(x)))[0];
   const todo = baseline.reviews.find(
-    (r) => r.id === baseline.dependencies[0].taskId,
+    (r) =>
+      r.kind === "todo" &&
+      /checklist/i.test(sourceFor(r)?.item.text || "") &&
+      baseline.dependencies.some((d) => d.approved && d.taskId === r.id),
   );
   assert.equal(selected.text, result.decision.text);
+  assert.equal(
+    sourceFor(selected).versionId,
+    result.decision.evidence.revision,
+  );
   assert.equal(todo.text, result.tasks[0].text);
+  assert.equal(sourceFor(todo).versionId, result.tasks[0].evidence.revision);
+  await assert.rejects(
+    rebuildProjection({
+      archive: a,
+      scope,
+      asOf,
+      dependencies: [{ ...dependencies[0], quote: "not in source" }],
+    }),
+    /quote/,
+  );
+  await assert.rejects(
+    rebuildProjection({
+      archive: a,
+      scope,
+      asOf,
+      dependencies: [dependencies[0], { ...dependencies[0], id: "another" }],
+    }),
+    /Duplicate dependency/,
+  );
+  await assert.rejects(
+    rebuildProjection({
+      archive: a,
+      scope,
+      asOf,
+      dependencies: [
+        { ...dependencies[0], evidence: { ...relation, revision: "missing" } },
+      ],
+    }),
+    /Dangling/,
+  );
+  const relationFile = path.join(
+    dir,
+    "originals",
+    originalRelation.sha256 + ".jsonl",
+  );
+  await fs.writeFile(relationFile, Buffer.alloc(rawRelation.length, 120));
+  await assert.rejects(
+    rebuildProjection({ archive: a, scope, asOf, dependencies }),
+    /original invalid/,
+  );
+  await fs.writeFile(relationFile, rawRelation);
   await assert.rejects(
     rebuildProjection({
       archive: a,
@@ -315,5 +431,105 @@ test("rejects dangling, cross-scope, cyclic revisions and preserves concurrent u
   assert.equal(
     answerDependency({ projection: corrected, decisionRootId: "root" }).status,
     "ambiguous",
+  );
+});
+test("inactive revisions without times stay structural and manual corrections do not invent evidence", async () => {
+  const scope = { owner: "o", project: "p" },
+    source = { harness: "h", instance: "i", session: "s" },
+    asOf = "2026-01-01T12:00:00Z";
+  const reference = (id) => ({ id, revision: "v-" + id, source });
+  const records = new Map(
+    ["root", "pending", "cancelled", "task", "relation"].map((id) => [
+      id,
+      {
+        scope,
+        source,
+        versionId: "v-" + id,
+        item: {
+          id,
+          ...(id === "root" ? { time: "2026-01-01T09:00:00Z" } : {}),
+          ...(id === "relation"
+            ? { text: "The task depends on the decision." }
+            : {}),
+        },
+      },
+    ]),
+  );
+  const rows = [
+    {
+      id: "decision",
+      scope,
+      kind: "decision",
+      text: "Original",
+      target: reference("root"),
+    },
+    {
+      id: "pending",
+      scope,
+      kind: "change",
+      text: "Pending",
+      target: reference("pending"),
+      revises: "decision",
+      basis: "proposed",
+    },
+    {
+      id: "cancelled",
+      scope,
+      kind: "change",
+      text: "Cancelled",
+      target: reference("cancelled"),
+      revises: "decision",
+      lifecycle: "cancelled",
+    },
+  ];
+  const archive = {
+    listAnnotations: async () => rows,
+    getItem: async ({ id }) => records.get(id) || null,
+  };
+  const graph = await rebuildProjection({
+    archive,
+    scope,
+    asOf,
+    dependencies: [],
+  });
+  assert.equal(graph.revisions.length, 2);
+  assert.equal(graph.edges.filter((e) => e.kind === "SUPERSEDES").length, 0);
+  assert.equal(
+    answerDependency({ projection: graph, decisionRootId: "decision" }).decision
+      .text,
+    "Original",
+  );
+  rows.push({
+    id: "fix",
+    scope,
+    kind: "correction",
+    text: "Manually corrected",
+    target: reference("root"),
+    revises: "decision",
+  });
+  const corrected = await rebuildProjection({
+    archive,
+    scope,
+    asOf,
+    dependencies: [],
+  });
+  assert.equal(
+    answerDependency({ projection: corrected, decisionRootId: "decision" })
+      .status,
+    "ambiguous",
+  );
+  const current = answerDependency({
+    projection: corrected,
+    decisionRootId: "decision",
+    mode: "current-known",
+  });
+  assert.equal(current.status, "resolved");
+  assert.equal(current.decision.text, "Manually corrected");
+  assert.equal(current.decision.originalEvidence.revision, "v-root");
+  assert.equal(current.decision.effectiveEvidence, null);
+  rows[3].evidence = reference("root");
+  await assert.rejects(
+    rebuildProjection({ archive, scope, asOf, dependencies: [] }),
+    /not independent/,
   );
 });

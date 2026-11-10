@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.docker/
+.docker-bench/
+benchmark/couchdb-sync/results/
+.DS_Store

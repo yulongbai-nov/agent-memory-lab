@@ -1,0 +1,30 @@
+name: couchdb-memory-sync-bench
+services:
+  couch:
+    build:
+      context: .
+      dockerfile: Dockerfile.couch
+    environment:
+      COUCHDB_USER: bench
+      COUCHDB_PASSWORD: bench-only-internal
+    volumes:
+      - couch-data:/opt/couchdb/data
+    networks: [sync]
+  a:
+    build: .
+    environment: { CLIENT: a }
+    volumes: ['a-data:/data']
+    networks: [sync]
+  b:
+    build: .
+    environment: { CLIENT: b }
+    volumes: ['b-data:/data']
+    networks: [sync]
+networks:
+  sync:
+    internal: true
+    name: ${COMPOSE_PROJECT_NAME}-sync
+volumes:
+  couch-data:
+  a-data:
+  b-data:

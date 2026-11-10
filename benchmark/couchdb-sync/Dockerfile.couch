@@ -1,0 +1,2 @@
+FROM couchdb:3.5.3@sha256:907eab5b7e55ab7cfd241d39b90b2a335ea40bef82acee5a37388c08bf201dda
+COPY single-node.ini /opt/couchdb/etc/local.d/10-single-node.ini

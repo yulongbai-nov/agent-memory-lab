@@ -1,0 +1,11 @@
+[
+ {"name":"missing required event id","operations":[{"event":0,"field":"missing_event_id"}]},
+ {"name":"same idempotency key with different event","operations":[{"event":1,"field":"idempotency_key","value":"demo:source:1"}]},
+ {"name":"unknown message","operations":[{"event":0,"field":"message_id","value":"msg-missing"}]},
+ {"name":"reversed range","operations":[{"event":1,"field":"turn_range","value":[2,1]}]},
+ {"name":"message outside range","operations":[{"event":1,"field":"turn_range","value":[2,2]}]},
+ {"name":"missing revision target","operations":[{"event":2,"field":"revises","value":["evt:missing"]}]},
+ {"name":"correction cannot revise decision","operations":[{"event":2,"field":"revises","value":["evt:decision-1"]}]},
+ {"name":"wrong status mapping","operations":[{"event":3,"field":"status","value":"待核实"}]},
+ {"name":"wrong source version","operations":[{"event":0,"field":"source_version","value":"v2"}]}
+]

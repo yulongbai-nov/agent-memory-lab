@@ -1,0 +1,8 @@
+results
+results-*
+.docker
+node_modules
+*.jsonl
+audit-*.json
+
+.docker-bench

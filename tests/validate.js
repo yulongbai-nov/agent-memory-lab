@@ -1,0 +1,23 @@
+'use strict';
+const fs=require('fs'); const assert=require('assert'); const Ajv=require('ajv/dist/2020'); const formats=require('ajv-formats');
+const ajv=new Ajv({allErrors:true,strict:true,strictRequired:false,strictTypes:false}); formats(ajv);
+const validate=ajv.compile(JSON.parse(fs.readFileSync('spec/event.schema.json')));
+const sample=JSON.parse(fs.readFileSync('examples/synthetic.json'));
+function canonical(v){if(Array.isArray(v))return '['+v.map(canonical).join(',')+']';if(v&&typeof v==='object')return '{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canonical(v[k])).join(',')+'}';return JSON.stringify(v);}
+function status(basis,lifecycle){if(lifecycle==='cancelled')return '已取消';if(lifecycle==='superseded')return '已替代';return {confirmed:'已确定',proposed:'待决定',uncertain:'待核实'}[basis];}
+function check(bundle){
+ assert(Array.isArray(bundle.sources)&&Array.isArray(bundle.events),'sources and events required');
+ const sources=new Map(); for(const s of bundle.sources){assert(s.harness&&s.session_id&&s.source_version&&Array.isArray(s.messages),'invalid source');const key=JSON.stringify([s.harness,s.session_id,s.source_version]);assert(!sources.has(key),'duplicate source');const ids=new Set();for(const m of s.messages){assert(typeof m.id==='string'&&m.id&&Number.isInteger(m.turn)&&m.turn>0&&typeof m.text==='string','invalid message');assert(!ids.has(m.id),'duplicate message id');ids.add(m.id);}sources.set(key,s);}
+ const ids=new Map(), keys=new Map();for(const e of bundle.events){assert(validate(e),JSON.stringify(validate.errors));const bytes=canonical(e);if(ids.has(e.event_id)){assert.equal(ids.get(e.event_id).bytes,bytes,'event id collision');continue;}if(keys.has(e.idempotency_key))throw Error('idempotency key collision');ids.set(e.event_id,{event:e,bytes});keys.set(e.idempotency_key,e.event_id);}
+ for(const {event:e} of ids.values()){
+  if(e.payload.status)assert.equal(e.payload.status,status(e.payload.basis,e.payload.lifecycle),'status mapping');
+  for(const r of e.source_refs){assert(r.turn_range[0]<=r.turn_range[1],'reversed turn range');const s=sources.get(JSON.stringify([r.harness,r.session_id,r.source_version]));assert(s,'unknown source version');for(const id of r.message_ids){const m=s.messages.find(m=>m.id===id);assert(m&&m.turn>=r.turn_range[0]&&m.turn<=r.turn_range[1],'missing message or out-of-range turn');}if(r.locator.type==='unavailable')assert.equal(r.locator.value,'','unavailable must not fabricate link');else assert(r.locator.value.length>0,'locator missing');if(r.locator.type==='native_url')assert(/^https:\/\//.test(r.locator.value),'native URL must be https');}
+  for(const id of e.revises||[]){const target=ids.get(id)?.event;assert(target&&id!==e.event_id,'missing or self revision');assert.equal(target.memory_id,e.memory_id,'revision memory mismatch');assert.deepStrictEqual(target.scope,e.scope,'revision scope mismatch');const allowed={correction:['interpretation'],change:['decision','change'],resolution:['decision','change']}[e.kind];assert(allowed&&allowed.includes(target.kind),'invalid revision kind');}
+ }
+ return {events:ids.size};
+}
+assert.equal(check(sample).events,5);assert.equal(check({...sample,events:[...sample.events,structuredClone(sample.events[0])]}).events,5);
+const expected=[['confirmed','active','已确定'],['proposed','active','待决定'],['uncertain','active','待核实'],['confirmed','superseded','已替代'],['confirmed','cancelled','已取消']];for(const [b,l,s] of expected)assert.equal(status(b,l),s);
+const negative=JSON.parse(fs.readFileSync('examples/invalid-cases.json'));for(const t of negative){let x=structuredClone(sample);t.operations.forEach(op=>{const e=x.events[op.event];if(op.field==='missing_event_id')delete e.event_id;else if(op.field==='idempotency_key')e.idempotency_key=op.value;else if(op.field==='message_id')e.source_refs[0].message_ids=[op.value];else if(op.field==='turn_range')e.source_refs[0].turn_range=op.value;else if(op.field==='revises')e.revises=op.value;else if(op.field==='status')e.payload.status=op.value;else if(op.field==='source_version')e.source_refs[0].source_version=op.value;else throw Error('unknown fixture operation');});assert.throws(()=>check(x),undefined,t.name);}
+const before=sample.events.find(e=>e.event_id==='evt:decision-1');const after=sample.events.find(e=>e.event_id==='evt:change-1');assert.equal(before.payload.text,'作为 benchmark 的基线');assert.deepStrictEqual(after.revises,[before.event_id]);assert.equal(sample.events.find(e=>e.kind==='correction').revises[0],'evt:misread-1');
+console.log(`Contract validated: ${sample.events.length} synthetic events, ${negative.length} negative cases, 5 statuses, idempotent replay.`);

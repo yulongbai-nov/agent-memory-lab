@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {"harness":"synthetic-harness","session_id":"session-demo","source_version":"v1","messages":[
+      {"id":"msg-001","turn":1,"text":"作为起点"},
+      {"id":"msg-002","turn":2,"text":"系统误记：将其作为建设基础"},
+      {"id":"msg-003","turn":3,"text":"纠正：作为 benchmark 的基线"},
+      {"id":"msg-004","turn":4,"text":"决定：作为 benchmark 的基线"},
+      {"id":"msg-005","turn":5,"text":"后来改变决定：停止使用该基线"}
+    ]}
+  ],
+  "events": [
+    {"schema_version":"0.1","event_id":"evt:source-1","idempotency_key":"demo:source:1","kind":"source","memory_id":"mem:baseline","scope":{"owner":"synthetic-user","project":"demo"},"valid_time":"2026-01-01T10:00:00Z","observed_time":"2026-01-01T10:01:00Z","source_refs":[{"harness":"synthetic-harness","session_id":"session-demo","source_version":"v1","message_ids":["msg-001"],"turn_range":[1,1],"captured_at":"2026-01-01T10:01:00Z","locator":{"type":"archived_text","value":"synthetic://session-demo/v1"}}],"payload":{"text":"作为起点"}},
+    {"schema_version":"0.1","event_id":"evt:misread-1","idempotency_key":"demo:misread:1","kind":"interpretation","memory_id":"mem:baseline","scope":{"owner":"synthetic-user","project":"demo"},"valid_time":"2026-01-01T10:02:00Z","observed_time":"2026-01-01T10:02:00Z","source_refs":[{"harness":"synthetic-harness","session_id":"session-demo","source_version":"v1","message_ids":["msg-001","msg-002"],"turn_range":[1,2],"captured_at":"2026-01-01T10:02:00Z","locator":{"type":"archived_text","value":"synthetic://session-demo/v1"}}],"payload":{"text":"误认为建设基础"}},
+    {"schema_version":"0.1","event_id":"evt:correct-1","idempotency_key":"demo:correction:1","kind":"correction","memory_id":"mem:baseline","scope":{"owner":"synthetic-user","project":"demo"},"valid_time":"2026-01-01T10:03:00Z","observed_time":"2026-01-01T10:03:00Z","source_refs":[{"harness":"synthetic-harness","session_id":"session-demo","source_version":"v1","message_ids":["msg-003"],"turn_range":[3,3],"captured_at":"2026-01-01T10:03:00Z","locator":{"type":"archived_text","value":"synthetic://session-demo/v1"}}],"revises":["evt:misread-1"],"payload":{"text":"纠正：作为 benchmark 的基线"}},
+    {"schema_version":"0.1","event_id":"evt:decision-1","idempotency_key":"demo:decision:1","kind":"decision","memory_id":"mem:baseline","scope":{"owner":"synthetic-user","project":"demo"},"valid_time":"2026-01-01T10:04:00Z","observed_time":"2026-01-01T10:04:00Z","source_refs":[{"harness":"synthetic-harness","session_id":"session-demo","source_version":"v1","message_ids":["msg-003","msg-004"],"turn_range":[3,4],"captured_at":"2026-01-01T10:04:00Z","locator":{"type":"archived_text","value":"synthetic://session-demo/v1"}}],"payload":{"text":"作为 benchmark 的基线","basis":"confirmed","lifecycle":"active","status":"已确定"}},
+    {"schema_version":"0.1","event_id":"evt:change-1","idempotency_key":"demo:change:1","kind":"change","memory_id":"mem:baseline","scope":{"owner":"synthetic-user","project":"demo"},"valid_time":"2026-01-02T10:00:00Z","observed_time":"2026-01-02T10:01:00Z","source_refs":[{"harness":"synthetic-harness","session_id":"session-demo","source_version":"v1","message_ids":["msg-005"],"turn_range":[5,5],"captured_at":"2026-01-02T10:01:00Z","locator":{"type":"archived_text","value":"synthetic://session-demo/v1"}}],"revises":["evt:decision-1"],"payload":{"text":"停止使用该基线","basis":"confirmed","lifecycle":"active","status":"已确定"}}
+  ]
+}

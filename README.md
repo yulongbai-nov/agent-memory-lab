@@ -5,6 +5,7 @@
 - [记忆数据契约 v0.1](spec/contract-v0.1.md)：事件、来源、纠正、状态和验收边界。
 - [JSON Schema](spec/event.schema.json)、[正例](examples/synthetic.json)、[反例](examples/invalid-cases.json)。
 - [设计决定与开放问题](spec/design-decisions.md)。
+- [可复用的离线同步技能](skills/couchdb-offline-sync/SKILL.md)。
 - [CouchDB/PouchDB 同步实验](benchmark/couchdb-sync/README.md)。
 
 Node.js 22 下运行 `npm ci && npm test`。实验需 Docker Compose 和 Node.js，进入实验目录执行 `./run.sh`。CI 在 Linux 真实运行二者并保存合成结果；结果不能代表手机或生产负载。

@@ -3,7 +3,6 @@
 // derived only from the actual timeline tool result, not supplied in advance.
 const http=require('node:http'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{spawn}=require('node:child_process');
 const cli='/opt/dsh-test/node_modules/.bin/dsh', patch='/opt/dsh-test/memory.patch.yml';
-const recallPromptVersion='dsh-synthetic-recall-v2';
 function objects(root) { const out=[], stack=[root]; while(stack.length){const x=stack.pop();if(!x||typeof x!=='object')continue;out.push(x);for(const v of Object.values(x))if(v&&typeof v==='object')stack.push(v);}return out; }
 async function providerRecall(home) {
  const token=process.env.MEMLAB_PROXY_TOKEN;
@@ -44,8 +43,8 @@ async function providerRecall(home) {
   answer.original_revision===original.revision&&answer.correction_revision===corrected.revision&&
   typeof answer.original_quote==='string'&&answer.original_quote.trim()&&original.text?.includes(answer.original_quote)&&
   typeof answer.correction_quote==='string'&&answer.correction_quote.trim()&&corrected.text?.includes(answer.correction_quote);
- if(!valid){console.error(JSON.stringify({event:'provider-recall-incomplete',promptVersion:recallPromptVersion,code,expired,completed:Boolean(final),calls:calls.length,results:results.length,found:Boolean(found),current:Boolean(current),original:Boolean(original),corrected:Boolean(corrected),timelineResults:timeline.length,timelineRows:timelineRows.length,todo:Boolean(next),answerParsed:Boolean(answer)}));throw Error('acceptance');}
- console.log(JSON.stringify({harness:'dsh',lane:'provider-backed',status:'validated',promptVersion:recallPromptVersion,matchedMcpCalls:calls.length,archiveOnlyCanaryVerified:true,distinctEvidenceVersions:2}));
+ if(!valid){console.error(JSON.stringify({event:'provider-recall-incomplete',code,expired,completed:Boolean(final),calls:calls.length,results:results.length,found:Boolean(found),current:Boolean(current),original:Boolean(original),corrected:Boolean(corrected),timelineResults:timeline.length,timelineRows:timelineRows.length,todo:Boolean(next),answerParsed:Boolean(answer)}));throw Error('acceptance');}
+ console.log(JSON.stringify({harness:'dsh',lane:'provider-backed',status:'validated',matchedMcpCalls:calls.length,archiveOnlyCanaryVerified:true,distinctEvidenceVersions:2}));
 }
 let phase='fixture-access';
 (async()=>{

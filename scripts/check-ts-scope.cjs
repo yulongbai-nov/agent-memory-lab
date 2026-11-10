@@ -10,6 +10,7 @@ const typescript = [
   "src/semantic-validation.cts",
 ];
 const lintedJavaScript = [
+  "benchmark/memory-views/run.cjs",
   "eslint.config.mjs",
   "lib/adapters/chatgpt-snapshot.cjs",
   "lib/codex-discovery.cjs",

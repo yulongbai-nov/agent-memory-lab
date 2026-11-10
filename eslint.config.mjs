@@ -17,6 +17,7 @@ export default defineConfig([
   },
   {
     files: [
+      "benchmark/memory-views/run.cjs",
       "eslint.config.mjs",
       "lib/adapters/chatgpt-snapshot.cjs",
       "lib/codex-discovery.cjs",
@@ -32,6 +33,11 @@ export default defineConfig([
     languageOptions: {
       globals: {
         Buffer: "readonly",
+        AbortSignal: "readonly",
+        __dirname: "readonly",
+        fetch: "readonly",
+        performance: "readonly",
+        setTimeout: "readonly",
         TextDecoder: "readonly",
         console: "readonly",
         process: "readonly",

@@ -84,12 +84,17 @@ test('successful HTTP alone does not establish a completed model turn',async t=>
 
 test('preserves bounded tool choices and the Responses function-call wire shape',async t=>{
  const sent=[];
- const find={type:'function',name:'memory_find',parameters:{type:'object',properties:{keyword:{type:'string'}},required:['keyword'],additionalProperties:false}};
+ const {createBoundedFind}=require('../lib/generated/bounded-memory-find.cjs');
+ const facade=createBoundedFind(()=>assert.fail('invalid find reached lookup'),()=>{});
+ const find={type:'function',name:'memory_find',description:facade.description,parameters:facade.inputSchema,strict:false};
+ const findArgs={limit:facade.inputSchema.properties.limit.maximum+1};
  const firstOutput=[
   {type:'reasoning',id:'rs_fixture',summary:[]},
-  {type:'function_call',id:'fc_fixture',call_id:'call_fixture',name:'memory_find',arguments:'{"keyword":"synthetic miss"}',status:'completed'}
+  {type:'function_call',id:'fc_fixture',call_id:'call_fixture',name:'memory_find',arguments:JSON.stringify(findArgs),status:'completed'}
  ];
- const result={type:'function_call_output',call_id:'call_fixture',output:'{"topics":[],"coverage":{"returned":0}}'};
+ const reply=await facade.run(findArgs);
+ assert.equal(reply.error?.code,'limit-maximum');
+ const result={type:'function_call_output',call_id:'call_fixture',output:JSON.stringify(reply)};
  const schema={type:'object',properties:{status:{type:'string',enum:['found','unknown']}},
   required:['status'],additionalProperties:false};
  const server=createBudgetProxy({apiKey:'synthetic-upstream-key',gateToken:token,fetchImpl:async(_url,options)=>{

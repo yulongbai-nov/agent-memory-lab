@@ -14,6 +14,7 @@
   "files": [
     "src/ontology-projection.cts",
     "src/chatgpt-snapshot.cts",
+    "src/bounded-memory-find.cts",
     "src/semantic-validation.cts",
     "src/semantic-queue.cts"
   ]

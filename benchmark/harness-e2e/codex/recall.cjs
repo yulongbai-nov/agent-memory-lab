@@ -264,4 +264,6 @@ supports_websockets = false
       matchedMcpCalls:called.length,archiveOnlyCanaryVerified:true,distinctEvidenceVersions:2,externalModelCalls:0}));
   } finally {server.close();}
 }
-main().catch(()=>{console.error('BLOCKED: real Codex CLI MCP replay did not satisfy the protocol gates.');process.exitCode=1;});
+if (require.main === module) main().catch(()=>{console.error('BLOCKED: real Codex CLI MCP replay did not satisfy the protocol gates.');process.exitCode=1;});
+
+module.exports = { functionToolCatalog, lastToolOutput, sendResponse };

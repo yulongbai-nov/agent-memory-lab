@@ -12,6 +12,28 @@ The proxy preserves `tool_choice` modes `auto`, `none`, and `required`. Required
 
 DSH uses the unchanged `dsh-synthetic-recall-v1` prompt. A transparent stdio observer records bounded timeline shape both before DSH serializes the real MCP response and from the CLI events. It emits parameter keys, paging, row kinds, known synthetic review IDs, byte counts, possible truncation and marker-presence flags. It never logs the marker value or answer text. Use the same prompt and fixture for later comparisons.
 
+## Bounded find contract
+
+The public Codex job also runs the bounded `memory_find` facade via real stdio MCP. The fixture reads the function from the native CLI's first Responses request, builds a set of calls from its schema, and drives them through the CLI using a loopback provider. It checks that the CLI continues after empty results and named argument errors, then finishes the turn.
+
+Codex CLI 0.165.0 advertised the following function under `mcp__memory`, with `strict: false`. It retained the nullable types and optional fields. It omitted numeric and string-length constraints from the wire schema. The description retained those bounds, which the facade derives from the MCP schema.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "keyword": { "type": ["string", "null"] },
+    "limit": { "type": ["integer", "null"] }
+  },
+  "required": [],
+  "additionalProperties": false
+}
+```
+
+The [shared validator](../../src/bounded-memory-find.cts) publishes the MCP schema and validates calls against it. Missing, null, empty, or whitespace-only keywords search within the configured view without a keyword. Other strings are trimmed and can include Chinese characters, spaces, and punctuation. The limit is 60 Unicode code points, at most 240 UTF-8 bytes. A missing or null result limit defaults to 5. Integer limits from 1 through 10,000 are accepted and clamped to 5, with the effective limit returned. No matches and named argument errors both use normal MCP tool results. Diagnostics contain parameter types, empty status, character and byte counts, numeric limits, the failed constraint, and whether MCP and the lookup ran. They omit keyword text and unexpected property names.
+
+A bounded local binding can pass `createBoundedFind(scopedLookup, report)` as `findTool` in the options to `startMcp`. Keep the scope, alias mapping, and source configuration in that binding. The lookup returns alias/count pairs and whether more results may exist. A relay should leave find argument semantics to the facade and keep its separate tool identity, transport, and egress checks. If it reconstructs the advertised function, take its description and parameters from the same facade.
+
 ## Local proxy
 
 Run the following only for an explicitly authorized synthetic experiment. The process listens on loopback and reads the single `OPENAI_API_KEY=…` entry from `~/.local/share/agent-memory-lab/credentials/openai.env`. The credential file must be owned by the current user with mode 0600. Use a new gate token for each process and pass only that token to the test client.

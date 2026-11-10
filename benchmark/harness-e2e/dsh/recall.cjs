@@ -50,29 +50,47 @@ let phase='fixture-access';
  const home=await fs.mkdtemp(path.join(os.tmpdir(),'dsh-recall-'));
  if(process.env.MEMLAB_RECALL_MODE==='provider'){phase='provider-recall';return providerRecall(home);}
  phase='replay-start';let stage=0,rejected=false,final;
+ const steps=['find','current','evidence','evidence','timeline'];
+ let current,original,corrected;
+ function unpack(value,depth=0){
+  if(depth>8)return null;
+  if(typeof value==='string'){try{return unpack(JSON.parse(value.replace(/^Output:\s*/i,'')),depth+1);}catch{return value;}}
+  if(Array.isArray(value)&&value.length===1&&value[0]?.type==='text')return unpack(value[0].text,depth+1);
+  if(value?.type==='text')return unpack(value.text,depth+1);
+  if(value?.content && !value.rows && !value.topics)return unpack(value.content,depth+1);
+  return value;
+ }
  const server=http.createServer(async(req,res)=>{
   try {
-   if(req.method!=='POST'||req.url!=='/v1/messages'||stage>1)throw Error('request');
+   if(req.method!=='POST'||req.url!=='/v1/messages'||stage>steps.length)throw Error('request');
    let size=0;const chunks=[];for await(const b of req){size+=b.length;if(size>524288)throw Error('size');chunks.push(b);}
-   const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));let blocks,reason;
-   if(stage===0){
-    if(JSON.stringify(body.messages).includes('MEMLAB_CANARY_'))throw Error('preexposed');
-    const tool=objects(body.tools).find(x=>typeof x.name==='string'&&x.name.endsWith('__memory_timeline'));
-    if(!tool)throw Error('no real tool');
-    blocks=[{type:'content_block_start',index:0,content_block:{type:'tool_use',id:'synthetic_call',name:tool.name,input:{}}},
-      {type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify({topic:'Release rehearsal'})}},
-      {type:'content_block_stop',index:0}]; reason='tool_use';
-   }else{
-    const result=objects(body.messages).filter(x=>x.type==='tool_result' && (x.tool_use_id==='synthetic_call' || x.tool_call_id==='synthetic_call'));
-    if(result.length!==1)throw Error('tool result absent');
-    const match=JSON.stringify(result[0]).match(/MEMLAB_CANARY_[a-f0-9]{24}/g);
-    if(!match || new Set(match).size!==1)throw Error('canary absent');
-    final='Prepare the rehearsal checklist '+match[0];
+   const body=JSON.parse(Buffer.concat(chunks).toString('utf8'));let blocks,reason,result,args;
+   if(stage===0&&JSON.stringify(body.messages).includes('MEMLAB_CANARY_'))throw Error('preexposed');
+   if(stage>0){
+    const output=objects(body.messages).filter(x=>x.type==='tool_result'&&(x.tool_use_id==='synthetic_call_'+(stage-1)||x.tool_call_id==='synthetic_call_'+(stage-1)));
+    if(output.length!==1)throw Error('tool result absent');
+    result=unpack(output[0].content);
+   }
+   if(stage===0)args={keyword:'release',limit:5};
+   if(stage===1){if(!result?.topics||result.topics.length!==5||!result.coverage?.has_more||!result.topics.some(t=>t.topic==='Release rehearsal'))throw Error('find');args={topic:'Release rehearsal'};}
+   if(stage===2){current=Array.isArray(result)?result[0]:null;if(!current?.citation?.revision||!current?.effectiveCitation?.revision||current.citation.revision===current.effectiveCitation.revision)throw Error('current');args=current.citation;}
+   if(stage===3){original=result;if(!original?.text||original.revision!==current.citation.revision)throw Error('original');args=current.effectiveCitation;}
+   if(stage===4){corrected=result;if(!corrected?.text||corrected.revision!==current.effectiveCitation.revision)throw Error('correction');args={topic:'Release rehearsal'};}
+   if(stage===5){
+    const todo=result?.rows?.find(r=>typeof r.next_step==='string'&&/MEMLAB_CANARY_[a-f0-9]{24}/.test(r.next_step));
+    if(!todo)throw Error('canary absent');
+    final=JSON.stringify({topic:'Release rehearsal',decision:current.text,next_step:todo.next_step,original_revision:original.revision,correction_revision:corrected.revision,original_quote:original.text,correction_quote:corrected.text});
     blocks=[{type:'content_block_start',index:0,content_block:{type:'text',text:''}},{type:'content_block_delta',index:0,delta:{type:'text_delta',text:final}},{type:'content_block_stop',index:0}];reason='end_turn';
+   }else{
+    const name='__memory_'+steps[stage];
+    const tool=objects(body.tools).find(x=>typeof x.name==='string'&&x.name.endsWith(name));
+    if(!tool)throw Error('no real tool');
+    blocks=[{type:'content_block_start',index:0,content_block:{type:'tool_use',id:'synthetic_call_'+stage,name:tool.name,input:{}}},
+      {type:'content_block_delta',index:0,delta:{type:'input_json_delta',partial_json:JSON.stringify(args)}},{type:'content_block_stop',index:0}];reason='tool_use';
    }
    const events=[{type:'message_start',message:{id:'synthetic-'+stage,type:'message',role:'assistant',model:'deepseek-flash',content:[],usage:{input_tokens:1,output_tokens:0}}},...blocks,{type:'message_delta',delta:{stop_reason:reason},usage:{output_tokens:2}},{type:'message_stop'}];
    res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache'});for(const e of events)res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);res.end('data: [DONE]\n\n');stage++;
-  }catch(error){rejected=true;console.error(JSON.stringify({event:'provider-gate-rejected',stage,reason:['request','size','preexposed','no real tool','tool result absent','canary absent'].includes(error.message)?error.message:'other'}));if(!res.headersSent)res.writeHead(400);res.end();}
+  }catch(error){rejected=true;console.error(JSON.stringify({event:'provider-gate-rejected',stage,reason:['request','size','preexposed','no real tool','tool result absent','canary absent','find','current','original','correction'].includes(error.message)?error.message:'other'}));if(!res.headersSent)res.writeHead(400);res.end();}
  });
  phase='replay-listen';await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});phase='replay-spawn';
  const env={PATH:'/usr/local/bin:/usr/bin:/bin',HOME:process.env.HOME,DSH_HOME:home,DSH_TELEMETRY_MODE:'OFF',LANG:'C.UTF-8',DEEPSEEK_API_KEY:'synthetic-key',DEEPSEEK_BASE_URL:`http://127.0.0.1:${server.address().port}/v1`};
@@ -81,6 +99,8 @@ let phase='fixture-access';
  p.stdout.on('data',b=>{out+=b;if(out.length>1048576)p.kill('SIGKILL');});
  const code=await new Promise(resolve=>{p.on('error',()=>resolve(null));p.on('close',resolve);});clearTimeout(timer);await new Promise(resolve=>server.close(resolve));
  phase='replay-parse';let events;try{events=out.trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));}catch{throw Error('events');}
- if(code!==0||expired||rejected||stage!==2||!final||!events.some(e=>e.type==='final'&&e.reason?.kind==='completed'&&e.text===final)){console.error(JSON.stringify({event:'replay-incomplete',code,expired,rejected,stage,hasFinal:Boolean(final),eventTypes:[...new Set(events.map(e=>e.type))],stderrExcerpt:err.split('\n').filter(line=>/error|failed|cannot|denied|mcp/i.test(line)).slice(0,4).map(line=>line.replace(/\/\S+/g,'[path]').replace(/MEMLAB_CANARY_[a-f0-9]{24}/g,'[canary]').replace(/[A-Za-z0-9_-]{24,}/g,'[identifier]').slice(0,250)),stderrClasses:['permission','module not found','Cannot find module','config','patch','sandbox','mcp','profile','ENOENT','EACCES','error'].filter(x=>err.toLowerCase().includes(x.toLowerCase()))}));throw Error('acceptance');}
- console.log(JSON.stringify({harness:'dsh',lane:'synthetic-protocol-replay',nativeCli:true,realMcpTimeline:true,archiveOnlyCanaryVerified:true,externalModelCalls:0}));
+ const calls=events.filter(e=>e.type==='tool_call'&&steps.some(n=>(e.tool||'').endsWith('__memory_'+n)));
+ const results=events.filter(e=>e.type==='tool_result'&&e.status==='completed'&&calls.some(c=>c.callId===e.callId));
+ if(code!==0||expired||rejected||stage!==steps.length+1||calls.length!==steps.length||results.length!==steps.length||!final||!events.some(e=>e.type==='final'&&e.reason?.kind==='completed'&&e.text===final)){console.error(JSON.stringify({event:'replay-incomplete',code,expired,rejected,stage,hasFinal:Boolean(final),eventTypes:[...new Set(events.map(e=>e.type))],stderrExcerpt:err.split('\n').filter(line=>/error|failed|cannot|denied|mcp/i.test(line)).slice(0,4).map(line=>line.replace(/\/\S+/g,'[path]').replace(/MEMLAB_CANARY_[a-f0-9]{24}/g,'[canary]').replace(/[A-Za-z0-9_-]{24,}/g,'[identifier]').slice(0,250)),stderrClasses:['permission','module not found','Cannot find module','config','patch','sandbox','mcp','profile','ENOENT','EACCES','error'].filter(x=>err.toLowerCase().includes(x.toLowerCase()))}));throw Error('acceptance');}
+ console.log(JSON.stringify({harness:'dsh',lane:'synthetic-protocol-replay',nativeCli:true,matchedMcpCalls:steps.length,archiveOnlyCanaryVerified:true,distinctEvidenceVersions:2,externalModelCalls:0}));
 })().catch(error=>{console.error(JSON.stringify({status:'blocked',phase,code:typeof error.code==='string'?error.code:'unavailable',reason:['events','gate','proxy','acceptance'].includes(error.message)?error.message:'other'}));process.exitCode=1;});

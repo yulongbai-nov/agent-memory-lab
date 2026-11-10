@@ -40,7 +40,7 @@ const collect = async iterable => { const batches = []; for await (const b of it
     assert.equal(partial.at(-1).checkpoint.position, 3);
     assert.equal(partial.at(-1).source.coverage.gaps.at(-1).reason, 'partial-tail');
     const compressed = path.join(dir, 'session.zstd');
-    fs.writeFileSync(compressed, zlib.zstdCompressSync(Buffer.from(records.map(JSON.stringify).join('\n') + '\n')));
+    fs.writeFileSync(compressed, Buffer.concat(records.map(record => zlib.zstdCompressSync(JSON.stringify(record) + '\n'))));
     const dsh = await collect(readDsh({ ...base, file: compressed }));
     assert.equal(dsh.flatMap(b => b.items).length, 3);
     assert.equal(dsh[0].source.harness, 'dsh');

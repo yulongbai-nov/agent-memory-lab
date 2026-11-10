@@ -41,16 +41,23 @@ function canaryWasRetrieved(input) {
   }
   return true;
 }
+function recallTool(tool) {
+  if(!tool.name.endsWith('memory_timeline'))return tool;
+  // The fixture asks for the entire selected topic. Search keywords and
+  // pagination can hide its reviewed todo even when retrieval succeeds.
+  return {...tool,strict:true,parameters:{type:'object',additionalProperties:false,
+    required:['topic'],properties:{topic:{type:'string'}}}};
+}
 function memoryTools(tools) {
   if (!Array.isArray(tools)) throw Error('tool rejected');
   const memory = [];
   let count=0;
   for (const tool of tools) {
     const readOnly = entry=>entry?.type==='function' && toolName.test(entry.name||'');
-    if (readOnly(tool)) {memory.push(tool);count++;continue;}
+    if (readOnly(tool)) {memory.push(recallTool(tool));count++;continue;}
     if (tool?.type==='namespace' && tool.name==='mcp__memory' &&
         Array.isArray(tool.tools) && tool.tools.every(readOnly)) {
-      memory.push(tool);count+=tool.tools.length;continue;
+      memory.push({...tool,tools:tool.tools.map(recallTool)});count+=tool.tools.length;continue;
     }
     // These tools are offered by the pinned CLI. They stay local and are
     // never advertised to the upstream model.

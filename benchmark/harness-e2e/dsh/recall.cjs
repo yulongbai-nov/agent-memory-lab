@@ -12,7 +12,7 @@ async function providerRecall(home) {
  const stats=await ready.json();if(stats.requestedModel!=='gpt-6-luna'||stats.requestedEffort!=='low'||!stats.limits)throw Error('proxy');
  const env={PATH:'/usr/local/bin:/usr/bin:/bin',HOME:process.env.HOME,DSH_HOME:home,DSH_TELEMETRY_MODE:'OFF',LANG:'C.UTF-8',OPENAI_API_KEY:token};
  const args=['--profile','headless','--patch','/opt/dsh-test/provider.patch.yml','--patch',patch,'--patch','/opt/dsh-test/recall-provider.patch.yml','--json','--permission-mode','read-only','--approval-policy','never',
-  'Use memory_find with keyword release and limit 5, then memory_current and memory_timeline for the selected Release rehearsal topic. Call memory_evidence for both the original citation and effective correction citation returned by memory_current. Return only JSON with string fields topic, decision, next_step, original_revision, correction_revision, original_quote, correction_quote. Copy the reviewed current decision and full todo next_step exactly. Revisions must exactly match the two evidence results; each quote must be a nonempty contiguous excerpt of its corresponding evidence text.'];
+  'First use memory_find with keyword "release" and limit 5. For the selected topic, call memory_current and memory_timeline, passing only the selected topic to each. Read the next_step on the timeline row whose kind is "todo", including its marker. Call memory_evidence for both complete citations returned by memory_current: the original citation and the effective correction citation. Return only JSON with string fields topic, decision, next_step, original_revision, correction_revision, original_quote, correction_quote. Copy the reviewed decision and the full todo next_step exactly. Copy both revisions and a contiguous quote from each exact evidence result.'];
  const p=spawn(cli,args,{env,cwd:home,stdio:['ignore','pipe','ignore']});let out='',expired=false;
  const timer=setTimeout(()=>{expired=true;p.kill('SIGKILL');},90000);
  p.stdout.on('data',b=>{out+=b;if(out.length>1048576)p.kill('SIGKILL');});
@@ -33,7 +33,9 @@ async function providerRecall(home) {
  const current=valuesFor('current').flat().find(v=>v?.topic==='Release rehearsal'&&v.citation?.revision&&v.effectiveCitation?.revision&&v.citation.revision!==v.effectiveCitation.revision);
  const evidence=valuesFor('evidence');
  const original=evidence.find(v=>v?.revision===current?.citation.revision),corrected=evidence.find(v=>v?.revision===current?.effectiveCitation.revision);
- const next=valuesFor('timeline').flatMap(v=>v?.rows||[]).find(v=>typeof v.next_step==='string'&&/MEMLAB_CANARY_[a-f0-9]{24}/.test(v.next_step));
+ const timeline=valuesFor('timeline');
+ const timelineRows=timeline.flatMap(v=>v?.rows||[]);
+ const next=timelineRows.find(v=>v.kind==='todo'&&typeof v.next_step==='string'&&/MEMLAB_CANARY_[a-f0-9]{24}/.test(v.next_step));
  const final=events.find(e=>e.type==='final'&&e.reason?.kind==='completed');let answer;
  try{answer=JSON.parse(final?.text);}catch{}
  const valid=code===0&&!expired&&found&&current&&original&&corrected&&next&&answer&&
@@ -41,7 +43,7 @@ async function providerRecall(home) {
   answer.original_revision===original.revision&&answer.correction_revision===corrected.revision&&
   typeof answer.original_quote==='string'&&answer.original_quote.trim()&&original.text?.includes(answer.original_quote)&&
   typeof answer.correction_quote==='string'&&answer.correction_quote.trim()&&corrected.text?.includes(answer.correction_quote);
- if(!valid){console.error(JSON.stringify({event:'provider-recall-incomplete',code,expired,completed:Boolean(final),calls:calls.length,results:results.length,found:Boolean(found),current:Boolean(current),original:Boolean(original),corrected:Boolean(corrected),todo:Boolean(next),answerParsed:Boolean(answer)}));throw Error('acceptance');}
+ if(!valid){console.error(JSON.stringify({event:'provider-recall-incomplete',code,expired,completed:Boolean(final),calls:calls.length,results:results.length,found:Boolean(found),current:Boolean(current),original:Boolean(original),corrected:Boolean(corrected),timelineResults:timeline.length,timelineRows:timelineRows.length,todo:Boolean(next),answerParsed:Boolean(answer)}));throw Error('acceptance');}
  console.log(JSON.stringify({harness:'dsh',lane:'provider-backed',status:'validated',matchedMcpCalls:calls.length,archiveOnlyCanaryVerified:true,distinctEvidenceVersions:2}));
 }
 let phase='fixture-access';

@@ -1,4 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
+import { open } from "node:fs/promises";
+import { constants } from "node:fs";
 import { createHash } from "node:crypto";
 
 interface IdentityInput {
@@ -86,14 +87,62 @@ function unknownArray(value: unknown): value is unknown[] {
   return Array.isArray(value);
 }
 function nonempty(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= 4096;
+  return (
+    typeof value === "string" && value.trim().length > 0 && value.length <= 4096
+  );
 }
 function timestamp(value: unknown): value is string {
-  return (
-    nonempty(value) &&
-    /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(value) &&
-    Number.isFinite(Date.parse(value))
+  if (
+    !nonempty(value) ||
+    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(value)
+  )
+    return false;
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return false;
+  const canonical = value.replace(
+    /(?:\.(\d{1,3}))?Z$/,
+    (_match, fraction: string | undefined) =>
+      `.${(fraction ?? "").padEnd(3, "0")}Z`,
   );
+  return new Date(time).toISOString() === canonical;
+}
+async function readSnapshotFile(file: string): Promise<Buffer> {
+  const maximum = 16 * 1024 * 1024;
+  const handle = await open(
+    file,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > maximum)
+      throw new Error("ChatGPT snapshot exceeds file limit or is not a file");
+    const buffer = Buffer.allocUnsafe(maximum + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const { bytesRead } = await handle.read(
+        buffer,
+        offset,
+        buffer.length - offset,
+        null,
+      );
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > maximum)
+      throw new Error("ChatGPT snapshot exceeds file limit");
+    return buffer.subarray(0, offset);
+  } finally {
+    await handle.close();
+  }
+}
+function parseJson(bytes: Buffer): unknown {
+  try {
+    return JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+    ) as unknown;
+  } catch {
+    throw new Error("Invalid ChatGPT snapshot encoding or JSON");
+  }
 }
 function parseSnapshot(value: unknown): Snapshot {
   if (
@@ -177,13 +226,8 @@ async function* readChatgptSnapshot(opts: Options) {
     throw new TypeError(
       "file, owner, project, instance and session are required",
     );
-  const info = await stat(opts.file);
-  if (!info.isFile() || info.size > 16 * 1024 * 1024)
-    throw new Error("ChatGPT snapshot exceeds file limit or is not a file");
-  const bytes = await readFile(opts.file);
-  if (bytes.length > 16 * 1024 * 1024)
-    throw new Error("ChatGPT snapshot exceeds file limit");
-  const snapshot = parseSnapshot(JSON.parse(bytes.toString("utf8")) as unknown);
+  const bytes = await readSnapshotFile(opts.file);
+  const snapshot = parseSnapshot(parseJson(bytes));
   if (snapshot.conversation.id !== opts.session)
     throw new Error("ChatGPT snapshot session mismatch");
   const digest = `sha256:${hash(bytes)}`;
@@ -218,12 +262,12 @@ async function* readChatgptSnapshot(opts: Options) {
   let position = prior?.position ?? 0;
   const limit = Math.min(snapshot.messages.length, position + maxRecords);
   let revision = checkpointRevision(prior);
+  const truncatedItems = snapshot.messages.filter(
+    (message) => message.truncated,
+  ).length;
   while (position < limit) {
     const previous = position;
     position = Math.min(limit, position + batchSize);
-    const truncatedItems = snapshot.messages.filter(
-      (message) => message.truncated,
-    ).length;
     const gaps = [
       ...(snapshot.representation === "connector-projection"
         ? ["connector-projection"]

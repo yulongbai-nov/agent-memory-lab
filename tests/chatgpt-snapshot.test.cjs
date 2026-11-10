@@ -41,3 +41,44 @@ test('rejects unknown shape and distinguishes normalized export completeness', a
   const batches=[]; for await(const batch of readChatgptSnapshot(opts)) batches.push(batch);
   assert.equal(batches[0].source.coverage.complete,true); assert.equal(batches[0].source.representation,'official-export-normalized');
 });
+
+test('rejects unsafe files, invalid encodings and impossible timestamps without leaking input', async t => {
+  const {spawnSync}=require('node:child_process');
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'chatgpt-file-')); t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'snapshot.json'); const opts={file,owner:'o',project:'p',instance:'i',session:'synthetic-thread'};
+  const read=async fileName=>{for await(const _ of readChatgptSnapshot({...opts,file:fileName})) {}};
+  await fs.writeFile(file,JSON.stringify(fixture())); const link=path.join(dir,'link'); await fs.symlink(file,link); await assert.rejects(read(link));
+  const fifo=path.join(dir,'fifo'); assert.equal(spawnSync('mkfifo',[fifo]).status,0); await assert.rejects(read(fifo),/not a file/);
+  const tooLarge=path.join(dir,'large'); const handle=await fs.open(tooLarge,'w'); await handle.truncate(16*1024*1024+1); await handle.close(); await assert.rejects(read(tooLarge),/file limit/);
+  await fs.writeFile(file,Buffer.from([0xff,0xfe])); await assert.rejects(read(file),/encoding or JSON/);
+  await fs.writeFile(file,'{"secret":"SYNTHETIC_PRIVATE_MARKER",'); await assert.rejects(read(file),error=>!error.message.includes('SYNTHETIC_PRIVATE_MARKER') && /encoding or JSON/.test(error.message));
+  for (const timestamp of ['2026-02-30T12:00:00Z','2026-01-01T24:00:00Z','2026-13-01T00:00:00Z']) {
+    const bad=fixture(); bad.messages[0].created_at=timestamp; await fs.writeFile(file,JSON.stringify(bad)); await assert.rejects(read(file),/Invalid/);
+  }
+  for (const key of ['id']) { const bad=fixture(); bad.conversation[key]='   '; await fs.writeFile(file,JSON.stringify(bad)); await assert.rejects(read(file),/Invalid/); }
+  const bad=fixture(); bad.messages[0].id=' \t'; await fs.writeFile(file,JSON.stringify(bad)); await assert.rejects(read(file),/Invalid/);
+});
+
+test('CLI import exposes exact evidence as source-only with no originals', async t => {
+  const {spawnSync}=require('node:child_process'); const {createQuery}=require('../lib/query.cjs');
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'chatgpt-cli-test-')); t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'snapshot.json'), archiveDir=path.join(dir,'archive'); await fs.writeFile(file,JSON.stringify(fixture()));
+  const args=['bin/memory.cjs','ingest','--source','chatgpt','--file',file,'--instance','fixture','--session','synthetic-thread','--owner','synthetic','--project','fixture','--dir',archiveDir];
+  const first=spawnSync(process.execPath,args,{cwd:path.join(__dirname,'..'),encoding:'utf8'}); assert.equal(first.status,0,first.stderr); assert.equal(JSON.parse(first.stdout).itemsImported,3);
+  const archive=await openArchive({dir:archiveDir,readOnly:true}); const rows=await archive.listItems({owner:'synthetic',project:'fixture'}); const record=rows.find(row=>row.item.text==='synthetic 1'); assert(record);
+  const query=createQuery(archive); const evidence=await query.evidence({owner:'synthetic',project:'fixture',id:record.item.id,revision:record.versionId,source:record.source});
+  assert.equal(evidence.text,'synthetic 1'); assert.equal(evidence.original.availability,'source-only'); assert.equal(evidence.metadata.originalBytes,false);
+  await assert.rejects(fs.stat(path.join(archiveDir,'originals')),error=>error.code==='ENOENT');
+});
+
+test('reads the opened file across path replacement and detects growth after fstat', async t => {
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'chatgpt-race-')); t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+  const file=path.join(dir,'snapshot.json'), saved=path.join(dir,'saved.json'); await fs.writeFile(file,JSON.stringify(fixture()));
+  const opts={file,owner:'o',project:'p',instance:'i',session:'synthetic-thread'}; const realOpen=fs.open;
+  let openCount=0;
+  t.mock.method(fs,'open',async (...args)=>{ const handle=await realOpen(...args); openCount++; await fs.rename(file,saved); await fs.writeFile(file,'not JSON'); return handle; });
+  const batches=[]; for await(const batch of readChatgptSnapshot(opts)) batches.push(batch); assert.equal(batches[0].items.length,3); assert.equal(openCount,1); t.mock.restoreAll();
+  await fs.rm(file); await fs.rename(saved,file);
+  t.mock.method(fs,'open',async (...args)=>{ const handle=await realOpen(...args); const realStat=handle.stat.bind(handle); handle.stat=async()=>{const result=await realStat(); await fs.appendFile(file,Buffer.alloc(16*1024*1024)); return result;}; return handle; });
+  await assert.rejects(async()=>{for await(const _ of readChatgptSnapshot(opts)) {}},/file limit/); t.mock.restoreAll();
+});

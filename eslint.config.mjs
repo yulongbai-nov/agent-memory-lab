@@ -10,4 +10,17 @@ export default defineConfig([
     linterOptions: { noInlineConfig: true },
     rules: { "@typescript-eslint/no-explicit-any": "error" },
   },
+  {
+    files: [
+      "eslint.config.mjs",
+      "lib/codex-discovery.cjs",
+      "scripts/check-ts-scope.cjs",
+      "tests/codex-discovery.test.cjs",
+    ],
+    extends: [js.configs.recommended],
+    linterOptions: { noInlineConfig: true },
+    languageOptions: {
+      globals: { Buffer: "readonly", TextDecoder: "readonly" },
+    },
+  },
 ]);

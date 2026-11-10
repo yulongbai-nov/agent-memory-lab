@@ -7,7 +7,7 @@ if [ -z "${MEMORY_LUNA_API_KEY:-}" ]; then
 fi
 proxy_key=$MEMORY_LUNA_API_KEY
 unset MEMORY_LUNA_API_KEY
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 HARNESS="$ROOT/benchmark/harness-e2e"
 if [ ! -f "$HARNESS/handoff.cjs" ]; then
   printf '%s\n' 'BLOCKED: the synthetic CouchDB handoff is unavailable.'

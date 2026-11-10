@@ -1,22 +1,50 @@
 "use strict";
 const fs = require("node:fs");
-const path = require("node:path");
+const { execFileSync } = require("node:child_process");
+const legacyJavaScript = require("./legacy-js-scope.json");
 
-const expected = ["src/semantic-queue.cts", "src/semantic-validation.cts"];
-function walk(dir) {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const name = path.join(dir, entry.name);
-    if (entry.isSymbolicLink())
-      throw new Error(`Unexpected symlink in TypeScript scope: ${name}`);
-    if (entry.isDirectory()) return walk(name);
-    return /\.(?:[cm]?ts|tsx)$/.test(name)
-      ? [name.split(path.sep).join("/")]
-      : [];
-  });
+const typescript = ["src/semantic-queue.cts", "src/semantic-validation.cts"];
+const lintedJavaScript = [
+  "eslint.config.mjs",
+  "lib/codex-discovery.cjs",
+  "scripts/check-ts-scope.cjs",
+  "tests/codex-discovery.test.cjs",
+];
+const files = execFileSync(
+  "git",
+  ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+  { encoding: "utf8" },
+).split("\0");
+const present = [...new Set(files)].filter((file) => {
+  if (!/\.(?:[cm]?[jt]s|[jt]sx)$/.test(file)) return false;
+  try {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile()) throw new Error(`Unexpected source path: ${file}`);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
+});
+const actualTypescript = present.filter((file) =>
+  /\.(?:[cm]?ts|tsx)$/.test(file),
+);
+const actualJavaScript = present.filter((file) =>
+  /\.(?:[cm]?js|jsx)$/.test(file),
+);
+
+function check(actual, expected, label) {
+  const added = actual.filter((file) => !expected.includes(file));
+  const removed = expected.filter((file) => !actual.includes(file));
+  if (added.length || removed.length) {
+    throw new Error(
+      `${label} scope changed. Review the explicit gates. Added: ${added.join(", ")}. Removed: ${removed.join(", ")}.`,
+    );
+  }
 }
-const actual = walk("src").sort();
-if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-  throw new Error(
-    `TypeScript scope changed; update the explicit gates: ${actual.join(", ")}`,
-  );
-}
+check(actualTypescript, typescript, "TypeScript");
+check(
+  actualJavaScript,
+  [...legacyJavaScript, ...lintedJavaScript],
+  "JavaScript",
+);

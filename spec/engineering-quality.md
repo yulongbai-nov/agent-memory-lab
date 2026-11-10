@@ -16,7 +16,7 @@ ChatGPT 历史摄取、知识图谱、原生深链和远端常在线部署属于
 
 第一批迁移语义候选验证与队列投影。保留既有 CommonJS 导入路径和外部数据结构，由 TypeScript 编译产物提供运行实现。外部模型输出以未知值进入，再按运行时约束逐层验证。历史 JavaScript 模块留在明确的 [旧文件清单](../scripts/legacy-js-scope.json)。新的 Codex 归档发现和验证脚本已纳入 lint。新增或移除源文件须有意识更新门禁范围，旧文件逐批迁移。
 
-使用 Node.js 24.22.1。运行仓库入口前执行 `npm ci --ignore-scripts` 和 `npm run build`。`npm run quality` 汇集代码 lint、格式、严格类型、工作流和两条隔离运行脚本的检查，需要 actionlint 与 ShellCheck。行为测试用 `npm test`。打包测试需从干净构建生成发行包，再用只含生产依赖的临时安装运行 CLI 和 MCP。
+使用 Node.js 24.22.1。运行仓库入口前执行 `npm ci --ignore-scripts` 和 `npm run build`。`npm run quality` 汇集代码 lint、格式、严格类型、工作流和两条隔离运行脚本的检查，需要 actionlint 与 ShellCheck。行为测试用 `npm test`。`npm run smoke:package` 构建并安装仅含生产依赖的发行包，加载两个迁移模块，再启动打包后的 MCP 执行合成检索。
 
 ## 验证矩阵
 

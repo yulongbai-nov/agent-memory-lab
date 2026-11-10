@@ -8,6 +8,7 @@ const lintedJavaScript = [
   "eslint.config.mjs",
   "lib/codex-discovery.cjs",
   "scripts/check-ts-scope.cjs",
+  "scripts/smoke-package.cjs",
   "tests/codex-discovery.test.cjs",
 ];
 const files = execFileSync(

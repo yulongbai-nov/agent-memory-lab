@@ -24,6 +24,8 @@ jobs:
       - name: Check scoped code and workflows
         run: npm run quality
       - run: npm test
+      - name: Verify packaged production CLI and MCP
+        run: npm run smoke:package
       - name: Verify product sync and protected roles
         run: node tests/archive-hub.cjs
       - name: Run synthetic CouchDB and PouchDB benchmark

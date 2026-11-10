@@ -15,12 +15,18 @@ export default defineConfig([
       "eslint.config.mjs",
       "lib/codex-discovery.cjs",
       "scripts/check-ts-scope.cjs",
+      "scripts/smoke-package.cjs",
       "tests/codex-discovery.test.cjs",
     ],
     extends: [js.configs.recommended],
     linterOptions: { noInlineConfig: true },
     languageOptions: {
-      globals: { Buffer: "readonly", TextDecoder: "readonly" },
+      globals: {
+        Buffer: "readonly",
+        TextDecoder: "readonly",
+        console: "readonly",
+        process: "readonly",
+      },
     },
   },
 ]);

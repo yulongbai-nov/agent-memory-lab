@@ -1,0 +1,11 @@
+# Scoped ontology projection v0.1
+
+This is a deterministic, rebuildable view of explicitly reviewed annotations and exact archived source revisions. It does not modify Tier 0 records, the archive schema, CouchDB, or SQLite. It does not infer facts, call a model, or synchronize a graph database.
+
+`rebuildProjection({archive, scope, asOf, dependencies})` resolves every participating annotation target and correction evidence to an exact source revision in the same owner and project. It emits decision, change and task nodes; `SUPERSEDES` and `CORRECTS` edges require explicit `revises` IDs. A correction keeps the original target and, when present, its separate clarification evidence. A manual correction without new evidence remains explicitly without new evidence.
+
+The `dependencies` input is a separate, explicitly approved sidecar array. Each entry is `{id, scope, taskId, decisionId, approved: true}` and connects a reviewed task to a reviewed decision root. It does not claim that the archive annotation format itself supports dependency fields. Invalid, unapproved, dangling and cross-scope entries are rejected. Revision cycles are rejected. Conflicting confirmed heads are not resolved by arrival order.
+
+`answerDependency({projection, decisionRootId})` follows confirmed active changes effective at the explicitly supplied RFC 3339 `asOf`, then returns the selected decision and its dependent open tasks with separate exact source references. Proposed or uncertain changes do not replace a confirmed decision. Missing effective times or multiple possible heads produce an ambiguous result. A correction has no recorded effective timestamp in the current annotation contract: if it applies to the selected head, the historical answer is ambiguous rather than inventing a time. Corrections to prior decisions remain visible in the projection even when a later confirmed change is selected.
+
+The synthetic test uses a DSH Tuesday decision, independent DSH clarification, Codex Wednesday change effective at noon, and an approved checklist dependency. At 12:30 it resolves Wednesday and the checklist with distinct references. The same fixture also exercises the existing current query and a simple local file baseline. This is a functional smoke comparison only; it is not a measured performance benchmark and makes no claim about production datasets.

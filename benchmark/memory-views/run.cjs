@@ -15,6 +15,7 @@ const {
 const { LIMITS } = require("../harness-e2e/openai-proxy.cjs");
 
 const scope = { owner: "synthetic", project: "memory-view-comparison" };
+const otherScope = { ...scope, project: "memory-view-other-project" };
 const topic = "Harbor rehearsal";
 const otherTopic = "Harbor production";
 const arms = ["file", "structured", "graph"];
@@ -22,6 +23,7 @@ const baseUrl = "http://127.0.0.1:8080";
 const later = "2026-01-01T12:30:00Z";
 const earlier = "2026-01-01T09:10:00Z";
 const promptVersion = "synthetic-memory-view-reader-v1";
+const retrievalBudget = { topK: 3, contextBytes: 1900 };
 const instructions = [
   "Answer only from the supplied synthetic memory rows. Rows can be in any order.",
   "A correction fixes an earlier interpretation. A change supersedes it at its stated valid time.",
@@ -74,7 +76,7 @@ const bytes = (value) => Buffer.byteLength(value);
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const round = (value) => Number(value.toFixed(2));
 
-async function seed(dir) {
+async function seed(dir, retrievalCheck = false) {
   const archive = await openArchive({ dir });
   const messages = [
     [
@@ -116,6 +118,31 @@ async function seed(dir) {
   ];
   const refs = new Map();
   const topics = new Map();
+  if (retrievalCheck) {
+    messages.push(
+      [
+        "availability",
+        "dsh",
+        topic,
+        "Thursday is a possible rehearsal slot if the venue is free. No decision was made.",
+        "11:55:00",
+      ],
+      [
+        "draft",
+        "codex",
+        topic,
+        "Draft action: prepare a checklist for the weekday slot. It is pending review.",
+        "12:20:00",
+      ],
+      [
+        "archive-note",
+        "codex",
+        topic,
+        "The current rehearsal checklist is filed in the archive.",
+        "12:25:00",
+      ],
+    );
+  }
   for (const [id, harness, selectedTopic, text, time] of messages) {
     const source = { harness, instance: "fixture", session: id };
     await archive.importBatch({
@@ -191,7 +218,36 @@ async function seed(dir) {
       knownAt: "2026-01-01T10:06:00Z",
     },
   ];
-  return { archive, refs, topics, dependencies };
+  const foreignRows = [];
+  if (retrievalCheck) {
+    const source = { harness: "codex", instance: "fixture", session: "move" };
+    const item = {
+      id: "move",
+      kind: "message",
+      role: "user",
+      text: "Current confirmed Harbor rehearsal is Friday. Prepare the checklist for that slot.",
+      time: "2026-01-01T12:29:00Z",
+      metadata: { topic },
+    };
+    await archive.importBatch({
+      scope: otherScope,
+      source,
+      checkpoint: { position: 1 },
+      items: [item],
+    });
+    const foreign = await archive.getItem({ ...otherScope, id: item.id });
+    foreignRows.push({
+      id: item.id,
+      type: "source",
+      topic,
+      scope: otherScope,
+      ref: handle({ id: item.id, revision: foreign.versionId }),
+      harness: source.harness,
+      time: item.time,
+      text: item.text,
+    });
+  }
+  return { archive, refs, topics, dependencies, foreignRows };
 }
 const handle = (ref) => `${ref.id}@${ref.revision}`;
 
@@ -253,7 +309,7 @@ async function buildViews(dir, fixture, corpus) {
       rows.map((row) => `- ${JSON.stringify(row)}\n`).join(""),
       { mode: 0o600 },
     );
-  await writeRows(journal, sourceRows);
+  await writeRows(journal, [...sourceRows, ...fixture.foreignRows]);
   await writeRows(ledger, [...reviewRows, ...relationRows]);
   buildMs.file = round(performance.now() - start);
 
@@ -303,7 +359,13 @@ async function buildViews(dir, fixture, corpus) {
       )
         .trim()
         .split("\n")
-        .map((line) => JSON.parse(line.slice(2))),
+        .map((line) => JSON.parse(line.slice(2)))
+        .filter(
+          (row) =>
+            !row.scope ||
+            (row.scope.owner === scope.owner &&
+              row.scope.project === scope.project),
+        ),
     structured: async () => {
       const page = await op.timeline({ topic, limit: 20 });
       assert.equal(page.coverage.has_more, false);
@@ -372,6 +434,160 @@ function grade(question, output, refs) {
   return { answerCorrect, evidenceExact, pass: answerCorrect && evidenceExact };
 }
 
+function auditAnswer(output) {
+  if (
+    !output ||
+    Object.keys(output).sort().join(",") !== "citations,facts,status" ||
+    !schema.properties.status.enum.includes(output.status) ||
+    !Array.isArray(output.facts) ||
+    !output.facts.every((value) => typeof value === "string") ||
+    !Array.isArray(output.citations) ||
+    !output.citations.every((value) => typeof value === "string")
+  )
+    throw Error("Invalid structured answer");
+  return {
+    status: output.status,
+    facts: output.facts,
+    citations: output.citations,
+  };
+}
+
+const stopWords = new Set(
+  "a an and as at be by can each for from if in is it of on or return the their this that to was what when which with".split(
+    " ",
+  ),
+);
+const terms = (text) =>
+  new Set(
+    text
+      .toLowerCase()
+      .split(/[^a-z]+/)
+      .filter((word) => word.length > 2 && !stopWords.has(word)),
+  );
+const citedBy = (row) => [row.target, row.evidence].filter(Boolean);
+
+function selectEvidence(question, rows) {
+  const words = terms(question.text);
+  for (const word of terms(topic)) words.delete(word);
+  const sources = rows.filter((row) => row.type === "source");
+  const records = rows.filter((row) => row.type !== "source");
+  const rank = (source) => {
+    const attached = records.filter((row) => citedBy(row).includes(source.ref));
+    const content = terms(
+      [
+        source.text,
+        ...attached.flatMap((row) => [
+          row.id,
+          row.type,
+          row.text ?? "",
+          row.basis ?? "",
+        ]),
+      ].join(" "),
+    );
+    return [...words].filter((word) => content.has(word)).length;
+  };
+  // Stable ties retain the candidate ordering of the underlying view.
+  const ranked = sources
+    .map((source) => ({ source, score: rank(source) }))
+    .sort((a, b) => b.score - a.score);
+  const selected = [];
+  const pack = (sources) => {
+    const handles = new Set(sources.map((source) => source.ref));
+    return {
+      sources,
+      reviews: records.filter(
+        (row) =>
+          citedBy(row).length && citedBy(row).every((ref) => handles.has(ref)),
+      ),
+    };
+  };
+  for (const { source } of ranked) {
+    if (selected.length === retrievalBudget.topK) break;
+    if (
+      bytes(JSON.stringify(pack([...selected, source]))) <=
+      retrievalBudget.contextBytes
+    )
+      selected.push(source);
+  }
+  return pack(selected);
+}
+
+async function runRetrievalCheck(fixture, views) {
+  const foreignRef = fixture.foreignRows[0].ref;
+  const lookup = async (ref, selectedScope) => {
+    const parts = typeof ref === "string" ? ref.split("@") : [];
+    if (parts.length !== 2 || !parts.every(Boolean)) return null;
+    const [id, revision] = parts;
+    const record = await fixture.archive.getItem({
+      ...selectedScope,
+      id,
+      revision,
+    });
+    return record &&
+      record.item.id === id &&
+      record.versionId === revision &&
+      record.scope.owner === selectedScope.owner &&
+      record.scope.project === selectedScope.project
+      ? record
+      : null;
+  };
+  assert.ok(await lookup(foreignRef, otherScope));
+  assert.equal(await lookup(foreignRef, scope), null);
+  const results = [];
+  for (const question of questions) {
+    for (const arm of arms) {
+      const start = performance.now();
+      const rows = await views[arm]();
+      const context = selectEvidence(question, rows);
+      const retrievalMs = round(performance.now() - start);
+      const selectedRefs = context.sources.map((row) => row.ref);
+      const requiredRefs = question.refs.map((id) =>
+        handle(fixture.refs.get(id)),
+      );
+      const referenced = [
+        ...new Set([...selectedRefs, ...context.reviews.flatMap(citedBy)]),
+      ];
+      let wrongScope = 0,
+        unresolved = 0;
+      for (const ref of referenced) {
+        if (await lookup(ref, scope)) continue;
+        if (await lookup(ref, otherScope)) wrongScope++;
+        else unresolved++;
+      }
+      const supportHits = requiredRefs.filter((ref) =>
+        selectedRefs.includes(ref),
+      ).length;
+      const contextBytes = bytes(JSON.stringify(context));
+      assert.ok(
+        selectedRefs.length <= retrievalBudget.topK &&
+          contextBytes <= retrievalBudget.contextBytes,
+      );
+      results.push({
+        question: question.id,
+        arm,
+        candidateVersions: rows.filter((row) => row.type === "source").length,
+        selectedRefs,
+        requiredRefs,
+        supportHits,
+        supportTotal: requiredRefs.length,
+        fullSupport: supportHits === requiredRefs.length,
+        wrongScope,
+        unresolved,
+        resolvedRefs: referenced.length - wrongScope - unresolved,
+        contextBytes,
+        retrievalMs,
+      });
+    }
+  }
+  return {
+    fixture: "synthetic-memory-retrieval-v1",
+    budget: retrievalBudget,
+    crossScopeCollisionRejected: true,
+    externalModelCalls: 0,
+    results,
+  };
+}
+
 async function runReader(cases, refs) {
   const token = randomBytes(24).toString("hex");
   let diagnostic = "";
@@ -426,6 +642,7 @@ async function runReader(cases, refs) {
       let status = "failed",
         usage = null,
         model = null,
+        answer = null,
         assessment = null;
       try {
         const response = await request("/v1/responses", {
@@ -454,8 +671,10 @@ async function runReader(cases, refs) {
             out.status === "completed" && model && text
               ? "completed"
               : "unverified";
-          if (status === "completed")
-            assessment = grade(sample.question, JSON.parse(text), refs);
+          if (status === "completed") {
+            answer = auditAnswer(JSON.parse(text));
+            assessment = grade(sample.question, answer, refs);
+          }
         }
       } catch {
         status = "response-error";
@@ -466,6 +685,10 @@ async function runReader(cases, refs) {
         status,
         usage,
         model,
+        answer,
+        expectedCitations: sample.question.refs.map((id) =>
+          handle(refs.get(id)),
+        ),
         ...assessment,
         answerMs: round(performance.now() - start),
       });
@@ -477,18 +700,35 @@ async function runReader(cases, refs) {
 }
 
 async function main() {
+  const mode = process.argv[2];
   assert.ok(
     process.argv.length === 2 ||
-      (process.argv.length === 3 && process.argv[2] === "--live"),
-    "Use default dry run or --live",
+      (process.argv.length === 3 && ["--live", "--retrieval"].includes(mode)),
+    "Use default dry run, --retrieval, or separately authorized --live",
   );
   const dir = await fs.mkdtemp(join(tmpdir(), "memory-view-comparison-"));
   try {
     const start = performance.now();
-    const fixture = await seed(dir);
+    const fixture = await seed(dir, mode === "--retrieval");
     const corpus = await makeCorpus(dir, fixture);
     const sharedBuildMs = round(performance.now() - start);
     const views = await buildViews(dir, fixture, corpus);
+    if (mode === "--retrieval") {
+      const result = await runRetrievalCheck(fixture, views);
+      console.log(
+        JSON.stringify(
+          {
+            mode: "retrieval",
+            sharedBuildMs,
+            buildMs: views.buildMs,
+            ...result,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
     const expected = [
       ...corpus.sourceRows,
       ...corpus.reviewRows,
@@ -550,7 +790,7 @@ async function main() {
       cases.reduce((total, sample) => total + bytes(sample.body), 0) <=
         LIMITS.totalBytes,
     );
-    const live = process.argv[2] === "--live";
+    const live = mode === "--live";
     const run = live
       ? await runReader(cases, fixture.refs)
       : { results: [], proxy: null };

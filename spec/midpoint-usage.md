@@ -47,11 +47,11 @@ node bin/memory.cjs serve --project work --port 8787
 
 `daily --project work --manifest <private-json>` 接受一个输入数组。每个对象可选择单文件的 `source,file,instance,session` 或目录的 `source,root,instance`，可加 `max-records`、`max-sessions` 和 `offset`。目录条目也可设置 `"recent":true`，优先扫描最近更新的会话。清单为空也可重建当前项目的轻量索引、已复核决定视图和待审队列。运行统计只输出计数，快照留在私有目录的 `derived/`。确定性整理阶段不调用模型，外部语义待授权。归档、批注和生效决定都未变化时跳过派生写入。已排期的决定过了生效点后，Wiki 在下一次整理刷新，即使没有新增写入。缺乏足够证据时技能候选列表为空。
 
-macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private-json> --project work` 生成用户 LaunchAgent。默认 03:00，按宿主机本地时区解释。Oslo 宿主对应 03:00 Europe/Oslo。将输出保存到私有 plist、用 `plutil -lint` 检查并用 `launchctl bootstrap gui/$(id -u) <plist>` 安装。已为 `private-acceptance` 私有试点注册 03:00 Europe/Oslo，并经调度器手动触发验证退出码为 0。每轮每端至多处理三份会话，每份最多摄取 40 条记录。预算在最近会话、失败重试和历史回补之间分配，无需人工为后台任务指定 offset。试点清单与派生快照在默认私有根目录的 `acceptance-*/` 子目录。可用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.daily` 停止试点。
+macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private-json> --project work` 生成用户 LaunchAgent。默认 03:00，按宿主机本地时区解释。Oslo 宿主对应 03:00 Europe/Oslo。将输出保存到私有 plist、用 `plutil -lint` 检查并用 `launchctl bootstrap gui/$(id -u) <plist>` 安装。私有试点的旧配置已有自然触发与快照记录，当前重载后的配置仍待观察首次自然触发。运行计数按当前加载实例计算。每轮每端至多处理三份会话，每份最多摄取 40 条记录。预算在最近会话、失败重试和历史回补之间分配，无需人工为后台任务指定 offset。试点清单与派生快照在默认私有根目录的 `acceptance-*/` 子目录。可用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.daily` 停止试点。
 
 ## 本机持续摄取
 
-`bin/daily-launchd.cjs --interval-seconds 120` 可为只含 `"incremental":true` 目录条目的私有清单生成变更采集任务。私有试点已注册 `local.agent-memory-lab.collector`，每 120 秒唤起一次有界运行。每轮每端最多 2 份变化会话、每份最多 80 条，超大投影批次会标记阻断。以文件元数据跳过未变化来源，较早失败的来源轮转重试；长期回填活跃时本轮让行。每会话前按当前索引大小检查容量。任务只做本地追加与基础索引，模型调用为 0。03:00 的任务负责每日派生整理与有界回补。
+`bin/daily-launchd.cjs --interval-seconds 120` 可为只含 `"incremental":true` 目录条目的私有清单生成变更采集任务。私有试点已注册 `local.agent-memory-lab.collector`，每 120 秒唤起一次有界运行。每轮每端最多 2 份变化会话、每份最多 80 条，超大投影批次会标记阻断。以文件元数据跳过未变化来源，较早失败的来源轮转重试；长期回填活跃时本轮让行。每会话前按当前索引大小检查容量。任务只做本地追加与基础索引，模型调用为 0。退出码 0 表示进程正常退出，积压和阻塞仍需查看采集统计。03:00 的任务负责每日派生整理与有界回补。
 
 用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.collector` 停用持续摄取。恢复时用 `launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/local.agent-memory-lab.collector.plist"`。两条命令只操作持续摄取。合成试点验证了定时新增、停用和重新启用。
 
@@ -61,7 +61,7 @@ macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private
 
 每次最多一批，提示上限 4 KiB、结构化回答上限 8 KiB、超时 75 秒。最多四个候选，每条须有一到三处能精确匹配来源、条目、版本和引文的引用。候选全部进入「待核实」结果，独立于归档、当前决定和 Wiki。结构和引用校验用于核对证据链接，语义仍需复核。成功缓存键包括模型、推理强度、固定夹具哈希、含来源版本的提示、提示版本和输出结构。真实 CLI 缓存和注入测试缓存采用不同命名空间，读回时核对来源元组、用量及候选引用。旧格式条目不迁移。失败不缓存，可以重试，能取得的失败用量单独报告。
 
-私有运行目录可用 `node bin/memory.cjs semantic-status --project work` 查看待处理条数、脱敏预览字节总量和 `requires-user-consent` 状态。该命令只输出统计。03:00 任务更新本地队列和确定性派生，模型调用数为 0。真实会话的外部模型处理须另行获得数据范围和发送授权。
+私有运行目录可用 `node bin/memory.cjs semantic-status --project work` 查看待处理条数、脱敏预览字节总量和 `requires-user-consent` 状态。该命令只输出统计。03:00 任务更新本地队列和确定性派生，外部模型调用数为 0。启用 `--local-draft` 时，草稿阶段可能运行本地推理。真实会话的外部模型处理须另行获得数据范围和发送授权。
 
 ## 手动本地语义构建
 

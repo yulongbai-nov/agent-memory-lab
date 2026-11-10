@@ -6,7 +6,7 @@
         serverName: memory
         transport: stdio
         command: node
-        args: ['/memory/bin/memory.cjs', 'mcp', '--dir', '/archive', '--owner', 'synthetic', '--project', 'release']
+        args: ['/opt/dsh-test/recall.cjs', '--observe-mcp']
         failOnStartupError: true
         reconnect:
           enabled: false

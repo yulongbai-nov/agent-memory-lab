@@ -54,6 +54,8 @@ test("bounded find handles optional values and clamps the requested limit", asyn
     mcpDispatched: true,
     queryDispatched: true,
     effectiveLimit: 1,
+    outcome: "found",
+    count: 1,
   });
   assert.ok(!JSON.stringify(diagnostics).includes("合成"));
 });
@@ -85,6 +87,8 @@ test("bounded find reports named rejections and normal empty results", async () 
       error: { code },
     });
     assert.equal(diagnostics.at(-1).constraint, code);
+    assert.equal(diagnostics.at(-1).outcome, "rejected");
+    assert.equal(diagnostics.at(-1).count, 0);
     assert.equal(diagnostics.at(-1).mcpDispatched, true);
     assert.equal(diagnostics.at(-1).queryDispatched, false);
   }
@@ -95,6 +99,8 @@ test("bounded find reports named rejections and normal empty results", async () 
     coverage: { returned: 0, effectiveLimit: 5, searchMayHaveMore: false },
   });
   assert.equal(calls, 1);
+  assert.equal(diagnostics.at(-1).outcome, "empty");
+  assert.equal(diagnostics.at(-1).count, 0);
 });
 
 test("bounded find omits backend errors and malformed aliases from its result", async () => {
@@ -114,6 +120,44 @@ test("bounded find omits backend errors and malformed aliases from its result", 
       searchMayHaveMore: false,
     }),
   ]) {
-    assert.deepEqual(await createBoundedFind(lookup, () => {}).run({}), failed);
+    const diagnostics = [];
+    assert.deepEqual(
+      await createBoundedFind(lookup, (d) => diagnostics.push(d)).run({}),
+      failed,
+    );
+    assert.deepEqual(diagnostics, [
+      {
+        keyword: { type: "missing" },
+        limit: { type: "missing" },
+        constraint: null,
+        mcpDispatched: true,
+        queryDispatched: true,
+        effectiveLimit: 5,
+        outcome: "lookup-failed",
+        count: 0,
+      },
+    ]);
   }
+});
+
+test("bounded find reports a single outcome after asynchronous lookup", async () => {
+  const diagnostics = [];
+  let finish;
+  const lookup = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const find = createBoundedFind(
+    () => lookup,
+    (d) => diagnostics.push(d),
+  );
+  const result = find.run({});
+  assert.deepEqual(diagnostics, []);
+  finish({
+    topics: [{ topic: "T1", matchCount: 1 }],
+    searchMayHaveMore: false,
+  });
+  await result;
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].outcome, "found");
+  assert.equal(diagnostics[0].count, 1);
 });

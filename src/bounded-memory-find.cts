@@ -47,6 +47,8 @@ type Diagnostic = {
   mcpDispatched: true;
   queryDispatched: boolean;
   effectiveLimit?: number;
+  outcome: "found" | "empty" | "lookup-failed" | "rejected";
+  count: number;
 };
 
 const validate = new Ajv({ ownProperties: true }).compile<FindArguments>(
@@ -109,6 +111,8 @@ function inspect(args: unknown): Diagnostic {
     constraint: null,
     mcpDispatched: true,
     queryDispatched: false,
+    outcome: "rejected",
+    count: 0,
   };
 }
 
@@ -139,38 +143,44 @@ function createBoundedFind(
       const keyword = args.keyword?.trim();
       diagnostic.queryDispatched = true;
       diagnostic.effectiveLimit = limit;
-      report(diagnostic);
+      let topics: Topic[];
+      let searchMayHaveMore: boolean;
       try {
         const result = await lookup({ ...(keyword && { keyword }), limit });
-        const topics = result.topics
-          .slice(0, limit)
-          .map(({ topic, matchCount }) => {
-            if (
-              typeof topic !== "string" ||
-              !/^T[1-9][0-9]{0,2}$/.test(topic) ||
-              !Number.isSafeInteger(matchCount) ||
-              matchCount < 0
-            ) {
-              throw new Error("Invalid topic alias");
-            }
-            return { topic, matchCount };
-          });
-        return {
-          topics,
-          coverage: {
-            returned: topics.length,
-            effectiveLimit: limit,
-            searchMayHaveMore:
-              result.searchMayHaveMore === true || result.topics.length > limit,
-          },
-        };
+        topics = result.topics.slice(0, limit).map(({ topic, matchCount }) => {
+          if (
+            typeof topic !== "string" ||
+            !/^T[1-9][0-9]{0,2}$/.test(topic) ||
+            !Number.isSafeInteger(matchCount) ||
+            matchCount < 0
+          ) {
+            throw new Error("Invalid topic alias");
+          }
+          return { topic, matchCount };
+        });
+        searchMayHaveMore =
+          result.searchMayHaveMore === true || result.topics.length > limit;
       } catch {
+        report({ ...diagnostic, outcome: "lookup-failed" });
         return {
           topics: [],
           coverage: { returned: 0, effectiveLimit: limit },
           error: { code: "lookup-failed" },
         };
       }
+      report({
+        ...diagnostic,
+        outcome: topics.length > 0 ? "found" : "empty",
+        count: topics.length,
+      });
+      return {
+        topics,
+        coverage: {
+          returned: topics.length,
+          effectiveLimit: limit,
+          searchMayHaveMore,
+        },
+      };
     },
   };
 }

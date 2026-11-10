@@ -12,6 +12,8 @@ const {
   sendResponse,
 } = require("./recall.cjs");
 
+const failingKeyword = "synthetic-lookup-failure";
+
 function runMcp(repo, diagnosticPath) {
   const { appendFileSync } = require("node:fs");
   const { startMcp } = require(join(repo, "lib/mcp.cjs"));
@@ -19,10 +21,14 @@ function runMcp(repo, diagnosticPath) {
     join(repo, "lib/generated/bounded-memory-find.cjs"),
   );
   const findTool = createBoundedFind(
-    ({ keyword }) => ({
-      topics: keyword ? [] : [{ topic: "T1", matchCount: 1 }],
-      searchMayHaveMore: false,
-    }),
+    ({ keyword }) => {
+      if (keyword === failingKeyword)
+        throw new Error("synthetic internal message");
+      return {
+        topics: keyword ? [] : [{ topic: "T1", matchCount: 1 }],
+        searchMayHaveMore: false,
+      };
+    },
     (metadata) =>
       appendFileSync(diagnosticPath, JSON.stringify(metadata) + "\n", {
         mode: 0o600,
@@ -55,10 +61,10 @@ function makeVectors(schema, published, ajv) {
     return validate({ [property]: null });
   };
   const vectors = [];
-  const valid = (label, args, limit = 5, empty = false) => {
+  const valid = (label, args, limit = 5, empty = false, error) => {
     assert.ok(validateNative(args), label + " must satisfy the native schema");
     assert.ok(validatePublished(args), label + " must satisfy the MCP schema");
-    vectors.push({ label, args, limit, empty });
+    vectors.push({ label, args, limit, empty, error });
   };
   const { keyword, limit } = schema.properties;
   const maxLength = keyword.maxLength ?? published.properties.keyword.maxLength;
@@ -100,6 +106,7 @@ function makeVectors(schema, published, ajv) {
       limit: 5,
     });
   }
+  valid("lookup-failed", { keyword: failingKeyword }, 5, true, "lookup-failed");
   valid("recovery", {});
   return vectors;
 }
@@ -297,7 +304,9 @@ supports_websockets = false
       .split("\n");
     const diagnostics = lines.map((line) => JSON.parse(line));
     assert.equal(diagnostics.length, vectors.length);
-    const result = vectors.map(({ label, args, error, limit }, index) => {
+    const result = vectors.map((vector, index) => {
+      const { label, args, error, limit, empty } = vector;
+      const rejected = Boolean(error && error !== "lookup-failed");
       const diagnostic = diagnostics[index];
       const keyword = args.keyword;
       const type = (value) =>
@@ -321,9 +330,13 @@ supports_websockets = false
             type: type(args.limit),
             ...(typeof args.limit === "number" && { value: args.limit }),
           },
-          constraint: error ?? null,
+          constraint: rejected ? error : null,
           mcpDispatched: true,
-          queryDispatched: !error,
+          queryDispatched: !rejected,
+          outcome: rejected
+            ? "rejected"
+            : (error ?? (empty ? "empty" : "found")),
+          count: error || empty ? 0 : 1,
           ...(limit !== undefined && { effectiveLimit: limit }),
         },
         label,

@@ -3,12 +3,18 @@ const fs = require("node:fs");
 const { execFileSync } = require("node:child_process");
 const legacyJavaScript = require("./legacy-js-scope.json");
 
-const typescript = ["src/semantic-queue.cts", "src/semantic-validation.cts"];
+const typescript = [
+  "src/chatgpt-snapshot.cts",
+  "src/semantic-queue.cts",
+  "src/semantic-validation.cts",
+];
 const lintedJavaScript = [
   "eslint.config.mjs",
+  "lib/adapters/chatgpt-snapshot.cjs",
   "lib/codex-discovery.cjs",
   "scripts/check-ts-scope.cjs",
   "scripts/smoke-package.cjs",
+  "tests/chatgpt-snapshot.test.cjs",
   "tests/codex-discovery.test.cjs",
 ];
 const files = execFileSync(

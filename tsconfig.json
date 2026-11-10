@@ -11,5 +11,9 @@
     "outDir": "lib/generated",
     "types": ["node"]
   },
-  "files": ["src/semantic-validation.cts", "src/semantic-queue.cts"]
+  "files": [
+    "src/chatgpt-snapshot.cts",
+    "src/semantic-validation.cts",
+    "src/semantic-queue.cts"
+  ]
 }

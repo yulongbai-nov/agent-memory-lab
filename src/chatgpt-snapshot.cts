@@ -2,11 +2,6 @@ import { open } from "node:fs/promises";
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
 
-interface IdentityInput {
-  harness: string;
-  instance: string;
-  session: string;
-}
 interface Identity {
   harness: string;
   instance: string;
@@ -62,16 +57,10 @@ interface Snapshot {
   };
   messages: Message[];
 }
-const {
-  sourceIdentity,
-}: {
-  sourceIdentity: (input: IdentityInput) => Identity;
-} = require("../adapters/index.js");
-const {
-  checkpointRevision,
-}: {
+interface ArchiveIdentity {
+  sourceIdentity: (input: Identity) => Identity;
   checkpointRevision: (checkpoint: Checkpoint | null) => string | null;
-} = require("../checkpoint.cjs");
+}
 const hash = (data: string | Buffer): string =>
   createHash("sha256").update(data).digest("hex");
 function object(value: unknown): value is Record<string, unknown> {
@@ -214,7 +203,10 @@ function parseSnapshot(value: unknown): Snapshot {
     messages,
   };
 }
-async function* readChatgptSnapshot(opts: Options) {
+async function* readChatgptSnapshot(
+  opts: Options,
+  { sourceIdentity, checkpointRevision }: ArchiveIdentity,
+) {
   if (
     !opts ||
     !nonempty(opts.file) ||
@@ -302,7 +294,7 @@ async function* readChatgptSnapshot(opts: Options) {
         id: `chatgpt-message-v1:${hash(JSON.stringify([identity.session, message.id]))}`,
         kind: "message",
         role: message.role,
-        text: message.text,
+        ...(message.truncated ? {} : { text: message.text }),
         time: message.created_at,
         metadata: {
           adapterVersion: "chatgpt-snapshot-v1",

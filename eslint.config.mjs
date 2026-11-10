@@ -5,7 +5,11 @@ import tseslint from "typescript-eslint";
 export default defineConfig([
   { ignores: ["node_modules/**", "lib/generated/**"] },
   {
-    files: ["src/semantic-validation.cts", "src/semantic-queue.cts"],
+    files: [
+      "src/chatgpt-snapshot.cts",
+      "src/semantic-validation.cts",
+      "src/semantic-queue.cts",
+    ],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     linterOptions: { noInlineConfig: true },
     rules: { "@typescript-eslint/no-explicit-any": "error" },
@@ -13,9 +17,11 @@ export default defineConfig([
   {
     files: [
       "eslint.config.mjs",
+      "lib/adapters/chatgpt-snapshot.cjs",
       "lib/codex-discovery.cjs",
       "scripts/check-ts-scope.cjs",
       "scripts/smoke-package.cjs",
+      "tests/chatgpt-snapshot.test.cjs",
       "tests/codex-discovery.test.cjs",
     ],
     extends: [js.configs.recommended],

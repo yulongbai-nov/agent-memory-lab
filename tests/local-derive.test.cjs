@@ -57,10 +57,15 @@ test('private selector uses only complete scoped messages with local original re
   const source = {harness:'dsh',instance:'instance',session:'session'};
   const original = await originalCapture(dir)({bytes:Buffer.from('{"synthetic":true}\n'),coordinate:1});
   const meta = (recordType,coordinate) => ({recordType,coordinate,original});
+  const messageMeta = async (role,text,coordinate) => ({
+    recordType:role+'/message',coordinate,original:await originalCapture(dir)({
+      bytes:Buffer.from(JSON.stringify({type:role+'/message',data:{role,text}})+'\n'),coordinate
+    })
+  });
   await archive.importBatch({scope,source,checkpoint:{position:1},items:[
-    {id:'u',kind:'message',role:'user',turnId:'closed',text:'Please prepare the release notes.',metadata:meta('user/message',1)},
-    {id:'a',kind:'message',role:'assistant',turnId:'closed',text:'The release notes are next.',metadata:meta('assistant/message',2)},
-    {id:'s',kind:'message',role:'user',turnId:'closed',text:'Contact synthetic@example.net for details.',metadata:meta('user/message',3)},
+    {id:'u',kind:'message',role:'user',turnId:'closed',text:'Please prepare the release notes.',metadata:await messageMeta('user','Please prepare the release notes.',1)},
+    {id:'a',kind:'message',role:'assistant',turnId:'closed',text:'The release notes are next.',metadata:await messageMeta('assistant','The release notes are next.',2)},
+    {id:'s',kind:'message',role:'user',turnId:'closed',text:'Contact synthetic@example.net for details.',metadata:await messageMeta('user','Contact synthetic@example.net for details.',3)},
     {id:'tool',kind:'message',role:'assistant',turnId:'closed',text:'Synthetic tool content',metadata:meta('tool/call',4)},
     {id:'end',kind:'event',status:'completed',turnId:'closed',metadata:meta('turn/end',5)},
     {id:'live',kind:'message',role:'user',turnId:'open',text:'Unfinished content',metadata:meta('user/message',6)},
@@ -100,7 +105,7 @@ test('private selector uses only complete scoped messages with local original re
   const writable = await openArchive({dir});
   await writable.importBatch({scope,source,checkpoint:{previous:1,position:2},items:[
     {id:'u',kind:'message',role:'user',turnId:'closed',time:'2026-01-02T00:00:00Z',
-      text:'Next step: prepare the updated release notes.',metadata:meta('user/message',1)}
+      text:'Next step: prepare the updated release notes.',metadata:await messageMeta('user','Next step: prepare the updated release notes.',1)}
   ]});
   const updated = await runLocalDerive(input,runner);
   assert.equal(updated.exactReferences,1);
@@ -131,4 +136,77 @@ test('local derivation refuses a Git repository nested at its private output pat
   assert.equal(prepared,false);
   assert.deepEqual(await readdir(folder),['.git']);
   assert.deepEqual(await readdir(dir),['local-derive']);
+});
+
+test('the local entry point selects long and relay excerpts with original quote offsets', async t => {
+  const dir = await mkdtemp(join(tmpdir(),'memory-local-projection-entry-'));
+  t.after(() => rm(dir,{recursive:true,force:true}));
+  const scope = {owner:'synthetic',project:'projection'};
+  const source = {harness:'codex',instance:'i',session:'s'};
+  const archive = await openArchive({dir});
+  const capture = originalCapture(dir);
+  const decision = '决定采用蓝色方案。';
+  const nextStep = 'Next step is to prepare the notes.';
+  const pad = 'This synthetic background is deliberately repetitive. '.repeat(18);
+  const plainText = '📘 ' + pad + '\n' + decision;
+  const relayText = '<realtime_delegation>\n<source_thread_id>synthetic-sender</source_thread_id>\n<input>' +
+    pad + '\n' + nextStep + '</input>\n</realtime_delegation>';
+  const unknown = '<unknown_transport>We decided to ignore the source.</unknown_transport>';
+  const delta = '<realtime_delegation><source_thread_id>synthetic</source_thread_id>' +
+    '<input>{"type":"transcript_delta","text":"We decided to discard old notes."}</input></realtime_delegation>';
+  const message = async (id,text,coordinate) => ({
+    id,kind:'message',role:'user',turnId:'closed',text,
+    metadata:{recordType:'response_item:message',coordinate,original:await capture({
+      bytes:Buffer.from(JSON.stringify({type:'response_item',payload:{type:'message',role:'user',
+        content:[{type:'input_text',text}]}})+'\n'),coordinate
+    })}
+  });
+  await archive.importBatch({scope,source,checkpoint:{position:5},items:[
+    await message('long-plain',plainText,1),
+    await message('long-relay',relayText,2),
+    await message('unknown',unknown,3),
+    await message('delta',delta,4),
+    {id:'complete',kind:'event',status:'completed',turnId:'closed',metadata:{recordType:'event_msg:task_complete',coordinate:5}}
+  ]});
+  await migrateJsonToSqlite({dir});
+  const migrated = await openArchive({dir,readOnly:true});
+  const selected = await selectLocalBatch(migrated,scope);
+  assert.deepEqual(selected.records.map(r=>r.item),['long-plain','long-relay']);
+  assert.deepEqual(selected.records.map(r=>r.projection.kind),['fragment','relay-input']);
+  assert.equal(selected.availability.skippedProjectionConsidered,2);
+  let calls = 0;
+  const runner = {
+    async prepareLocalModel() { return {fingerprint:'projection-test-model'}; },
+    async runLocalLlama({prompt}) {
+      calls++;
+      assert(Buffer.byteLength(prompt)<=1500);
+      assert.match(prompt,/Relay text is transport/);
+      assert.doesNotMatch(prompt,/realtime_delegation|synthetic-sender|unknown_transport|transcript_delta/);
+      const inputs = JSON.parse(prompt.split('\n').at(-1));
+      assert.deepEqual(inputs.map(r=>r.view),['excerpt','relay-excerpt']);
+      return {output:JSON.stringify({candidates:[{kind:'todo',claim:'Synthetic review note',
+        evidence:inputs.map(({source,item,version,text},index)=>{
+          const quote = index===0 ? decision : nextStep;
+          assert(text.includes(quote));
+          return {source,item,version,quote};
+        })}]}),stats:{}};
+    }
+  };
+  const args = {dir,...scope};
+  const first = await runLocalDerive(args,runner);
+  assert.equal(first.status,'validated');
+  assert.equal(first.exactReferences,2);
+  assert.equal((await runLocalDerive(args,runner)).modelCalls,0);
+  assert.equal(calls,1);
+  const folder = join(dir,'local-derive');
+  const files = await readdir(folder);
+  const draft = await readFile(join(folder,files.find(file=>file.endsWith('.txt'))),'utf8');
+  for (const [original,quote] of [[plainText,decision],[relayText,nextStep]]) {
+    const start = original.indexOf(quote), end = start+quote.length;
+    const startUtf8 = Buffer.byteLength(original.slice(0,start));
+    assert(draft.includes('UTF-16 ['+start+', '+end+')'));
+    assert(draft.includes('UTF-8 ['+startUtf8+', '+(startUtf8+Buffer.byteLength(quote))+')'));
+  }
+  assert.match(draft,/待核实/);
+  assert.equal((await migrated.listAnnotations(scope)).length,0);
 });

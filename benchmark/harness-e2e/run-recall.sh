@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 ARCHIVE=${1:?synthetic archive directory required}
 [ -f "$ARCHIVE/.synthetic-harness-fixture" ] || { echo 'BLOCKED: synthetic fixture marker required'; exit 1; }
 IMAGE=agent-memory-lab-codex-synthetic:0.165.0
@@ -17,3 +17,5 @@ docker commit "$CONTAINER" "$FIXTURE_IMAGE" >/dev/null
 docker rm "$CONTAINER" >/dev/null
 CONTAINER=
 docker run --rm --network none --read-only --tmpfs /tmp:mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/recall.cjs
+docker run --rm --network none --read-only --tmpfs /tmp:mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/find-contract.cjs
+docker run --rm --network none --read-only --tmpfs /tmp:mode=1777 --memory 2g --cpus 2 --pids-limit 128 --cap-drop ALL --security-opt no-new-privileges -e HOME=/tmp --entrypoint node "$FIXTURE_IMAGE" /opt/read-contract.cjs

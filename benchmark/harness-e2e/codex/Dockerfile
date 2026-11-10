@@ -4,5 +4,5 @@ RUN npm install --prefix /opt/codex --ignore-scripts --no-audit --no-fund @opena
 ENV PATH="/opt/codex/node_modules/.bin:${PATH}"
 RUN mkdir /out /memory /archive && chmod 700 /archive
 WORKDIR /work
-COPY mock-session.cjs recall.cjs /opt/
+COPY mock-session.cjs recall.cjs find-contract.cjs read-contract.cjs /opt/
 ENTRYPOINT ["node", "/opt/mock-session.cjs"]

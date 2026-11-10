@@ -4,15 +4,15 @@
   "private": true,
   "scripts": {
     "test": "npm run build && node tests/validate.js && node tests/adapters.cjs && node --test tests/*.test.cjs",
-    "lint": "npm run check:ts-scope && eslint src/semantic-validation.cts src/semantic-queue.cts eslint.config.mjs lib/codex-discovery.cjs scripts/check-ts-scope.cjs tests/codex-discovery.test.cjs scripts/smoke-package.cjs src/chatgpt-snapshot.cts lib/adapters/chatgpt-snapshot.cjs tests/chatgpt-snapshot.test.cjs src/ontology-projection.cts lib/ontology-projection.cjs tests/ontology-projection.test.cjs benchmark/memory-views/run.cjs --max-warnings 0",
-    "format:check": "prettier --check src/semantic-validation.cts src/semantic-queue.cts tsconfig.json eslint.config.mjs scripts/check-ts-scope.cjs lib/codex-discovery.cjs tests/codex-discovery.test.cjs scripts/legacy-js-scope.json scripts/smoke-package.cjs src/chatgpt-snapshot.cts lib/adapters/chatgpt-snapshot.cjs tests/chatgpt-snapshot.test.cjs src/ontology-projection.cts lib/ontology-projection.cjs tests/ontology-projection.test.cjs benchmark/memory-views/run.cjs",
+    "lint": "npm run check:ts-scope && eslint src/semantic-validation.cts src/semantic-queue.cts eslint.config.mjs lib/codex-discovery.cjs scripts/check-ts-scope.cjs tests/codex-discovery.test.cjs scripts/smoke-package.cjs src/chatgpt-snapshot.cts lib/adapters/chatgpt-snapshot.cjs tests/chatgpt-snapshot.test.cjs src/ontology-projection.cts lib/ontology-projection.cjs tests/ontology-projection.test.cjs src/bounded-memory-find.cts src/bounded-memory-read.cts tests/bounded-memory-find.test.cjs benchmark/harness-e2e/codex/find-contract.cjs benchmark/harness-e2e/codex/read-contract.cjs lib/bounded-memory-relay.cjs benchmark/memory-views/run.cjs --max-warnings 0",
+    "format:check": "prettier --check src/semantic-validation.cts src/semantic-queue.cts tsconfig.json eslint.config.mjs scripts/check-ts-scope.cjs lib/codex-discovery.cjs tests/codex-discovery.test.cjs scripts/legacy-js-scope.json scripts/smoke-package.cjs src/chatgpt-snapshot.cts lib/adapters/chatgpt-snapshot.cjs tests/chatgpt-snapshot.test.cjs src/ontology-projection.cts lib/ontology-projection.cjs tests/ontology-projection.test.cjs src/bounded-memory-find.cts src/bounded-memory-read.cts tests/bounded-memory-find.test.cjs benchmark/harness-e2e/codex/find-contract.cjs benchmark/harness-e2e/codex/read-contract.cjs lib/bounded-memory-relay.cjs benchmark/memory-views/run.cjs",
     "typecheck": "npm run check:ts-scope && tsc --noEmit",
     "lint:workflow": "actionlint",
     "quality": "npm run lint && npm run format:check && npm run typecheck && npm run lint:workflow && npm run lint:shell",
     "build": "tsc",
     "prepack": "npm run build",
     "check:ts-scope": "node scripts/check-ts-scope.cjs",
-    "lint:shell": "shellcheck --severity=warning benchmark/harness-e2e/run-public.sh benchmark/harness-e2e/run-trusted.sh",
+    "lint:shell": "shellcheck --severity=warning benchmark/harness-e2e/run-public.sh benchmark/harness-e2e/run-recall.sh benchmark/harness-e2e/run-trusted.sh",
     "smoke:package": "node scripts/smoke-package.cjs",
     "benchmark:memory-views": "node benchmark/memory-views/run.cjs",
     "check:memory-retrieval": "node benchmark/memory-views/run.cjs --check-retrieval"

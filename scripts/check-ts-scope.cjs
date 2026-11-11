@@ -13,6 +13,9 @@ const typescript = [
   "src/collector.cts",
   "src/semantic-queue.cts",
   "src/semantic-validation.cts",
+  "src/candidate-contract-v2.cts",
+  "lib/candidate-contract-v2.d.cts",
+  "tests/candidate-contract-v2.types.cts",
 ];
 const lintedJavaScript = [
   "benchmark/harness-e2e/codex/find-contract.cjs",
@@ -28,6 +31,8 @@ const lintedJavaScript = [
   "benchmark/harness-e2e/response-metadata.cjs",
   "tests/paired-reader.test.cjs",
   "tests/proxy-staging.test.cjs",
+  "lib/candidate-contract-v2.cjs",
+  "tests/candidate-contract-v2.test.cjs",
   "tests/memory-evidence-bundle-holdout.test.cjs",
   "eslint.config.mjs",
   "lib/adapters/chatgpt-snapshot.cjs",

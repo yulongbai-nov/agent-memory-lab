@@ -305,10 +305,17 @@ async function live(cases, frozen, resultFile, options = {}) {
     }
   };
   const proxyStats = async () => {
+    const remaining = deadline - Date.now();
+    if (options.requireWireHashes && remaining <= 0)
+      throw Error("overall deadline exhausted");
     const response = await send(base + "/stats", {
       headers: { authorization: `Bearer ${token}` },
       redirect: "error",
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(
+        options.requireWireHashes
+          ? Math.max(1, Math.min(3000, remaining))
+          : 3000,
+      ),
     });
     if (!response.ok) throw Error("proxy stats unavailable");
     return response.json();
@@ -326,7 +333,11 @@ async function live(cases, frozen, resultFile, options = {}) {
     if (
       initial.requests !== 0 ||
       initial.requestedModel !== "gpt-6-luna" ||
-      initial.requestedEffort !== "low"
+      initial.requestedEffort !== "low" ||
+      (options.requireWireHashes &&
+        (initial.wireHashVersion !== 1 ||
+          !Array.isArray(initial.wireHashes) ||
+          initial.wireHashes.length !== 0))
     ) {
       runStatus = "proxy-not-fresh-or-wrong-model";
       await persist();
@@ -413,6 +424,27 @@ async function live(cases, frozen, resultFile, options = {}) {
             (!out.reasoning?.effort || out.reasoning.effort === "low")
               ? "completed"
               : "unverified";
+          let assessment = null,
+            decodedAnswer = null,
+            decodeErrors = null;
+          if (status === "completed") {
+            try {
+              if (options.assess)
+                ({ assessment, decodedAnswer, decodeErrors } = options.assess(
+                  sample,
+                  answer,
+                ));
+              else
+                assessment = score(
+                  sample,
+                  answer,
+                  require("./paired-oracle.cjs"),
+                );
+            } catch {
+              assessment = { protocolError: true, items: [] };
+              decodeErrors = "decode-failed";
+            }
+          }
           results[i] = {
             ...results[i],
             status,
@@ -431,11 +463,9 @@ async function live(cases, frozen, resultFile, options = {}) {
             errorCode: metadata.errorCode,
             visibleText,
             answer,
+            ...(options.assess ? { decodedAnswer, decodeErrors } : {}),
             usage: cleanUsage(metadata.usage),
-            assessment:
-              status === "completed"
-                ? score(sample, answer, require("./paired-oracle.cjs"))
-                : null,
+            assessment,
           };
         }
       } catch {
@@ -449,21 +479,65 @@ async function live(cases, frozen, resultFile, options = {}) {
       try {
         const stats = await proxyStats();
         const count = stats.requests;
-        results[i].proxyRequestsAfter = count;
+        results[i].proxyRequestsAfter =
+          Number.isSafeInteger(count) && count >= 0 ? count : null;
         if (
           Number.isSafeInteger(count) &&
           previousCount !== null &&
           (count === previousCount || count === previousCount + 1)
-        )
-          results[i].upstreamSent = count === previousCount + 1;
+        ) {
+          const attempted = count === previousCount + 1;
+          if (options.requireWireHashes) {
+            results[i].forwardAttempted = attempted;
+            results[i].upstreamSent = !attempted
+              ? false
+              : ["completed", "unverified"].includes(results[i].status) ||
+                  (results[i].errorCode !== null &&
+                    results[i].errorCode !== undefined)
+                ? true
+                : null;
+          } else results[i].upstreamSent = attempted;
+        }
+        if (options.requireWireHashes) {
+          if (
+            stats.wireHashVersion !== 1 ||
+            !Array.isArray(stats.wireHashes) ||
+            !Number.isSafeInteger(count) ||
+            previousCount === null ||
+            count < previousCount ||
+            count > previousCount + 1 ||
+            stats.wireHashes.length !== count
+          )
+            throw Error("wire proof unavailable");
+          if (count === previousCount + 1) {
+            if (
+              typeof stats.wireHashes[count - 1] !== "string" ||
+              !/^[a-f0-9]{64}$/.test(stats.wireHashes[count - 1])
+            )
+              throw Error("invalid wire hash");
+            results[i].actualWireSha256 = stats.wireHashes[count - 1];
+            if (results[i].actualWireSha256 !== frozen[i].wireSha256)
+              throw Error("wire hash mismatch");
+            results[i].wireVerified = true;
+          } else {
+            results[i].actualWireSha256 = null;
+            results[i].wireVerified = null;
+          }
+        }
         previousCount = Number.isSafeInteger(count) ? count : null;
       } catch {
-        results[i].proxyRequestsAfter = null;
+        results[i].proxyRequestsAfter ??= null;
         previousCount = null;
+        if (options.requireWireHashes) {
+          results[i].wireVerified = false;
+          runStatus = "wire-proof-failed";
+          await persist();
+          break;
+        }
       }
       await persist();
     }
-    runStatus = "finished";
+    if (runStatus !== "wire-proof-failed") runStatus = "finished";
     await persist();
     return { runStatus, frozen, results };
   } finally {

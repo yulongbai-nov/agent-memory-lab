@@ -22,6 +22,8 @@ const lintedJavaScript = [
   "benchmark/memory-views/reference-alias.cjs",
   "benchmark/memory-views/paired-alias-preflight.cjs",
   "benchmark/memory-views/paired-alias-worker.cjs",
+  "benchmark/memory-views/paired-alias-live.cjs",
+  "tests/paired-alias-live.test.cjs",
   "tests/reference-alias.test.cjs",
   "benchmark/memory-views/evidence-bundle.cjs",
   "benchmark/memory-views/paired-fixtures.cjs",

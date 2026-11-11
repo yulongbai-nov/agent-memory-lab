@@ -1,7 +1,7 @@
 'use strict';
 
 const { createServer } = require('node:http');
-const { timingSafeEqual } = require('node:crypto');
+const { timingSafeEqual,createHash } = require('node:crypto');
 const { once } = require('node:events');
 const { constants, closeSync, fstatSync, openSync, readFileSync } = require('node:fs');
 const { homedir } = require('node:os');
@@ -146,6 +146,7 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
     effortConfirmed:0,effortUnreported:0,unexpectedEffort:0,
     clientClosedBeforeTerminal:0,transportFailures:0};
   const models=new Set();
+  const wireHashes=[];
   const usage=Object.fromEntries(['input_tokens','output_tokens','total_tokens'].map(key=>[key,{reported:0,tokens:0}]));
   let deadline;
   const server=createServer(async(req,res)=>{
@@ -156,7 +157,7 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
     if(req.method==='GET'&&req.url==='/stats')return send(200,{...stats,observedModels:[...models],
       usage:Object.fromEntries(Object.entries(usage).map(([key,value])=>[key,
         {...value,tokens:value.reported ? value.tokens : null}])),
-      requestedModel:MODEL,requestedEffort:EFFORT,limits:LIMITS});
+      requestedModel:MODEL,requestedEffort:EFFORT,wireHashVersion:1,wireHashes:[...wireHashes],limits:LIMITS});
     if(req.method!=='POST'||req.url!=='/v1/responses')return send(404,{error:'unsupported'});
     if(!String(req.headers['content-type']||'').startsWith('application/json'))return send(415,{error:'unsupported body'});
     if(Number(req.headers['content-length'])>LIMITS.requestBytes)return send(413,{error:'input limit'});
@@ -180,7 +181,7 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
     const now=Date.now();
     deadline ??= now+LIMITS.runMs;
     if(now>=deadline){stats.deadlineRefusals++;return send(429,{error:'deadline-exhausted'});}
-    stats.requests++;stats.inputBytes+=bytes;
+    stats.requests++;stats.inputBytes+=bytes;wireHashes.push(createHash('sha256').update(data,'utf8').digest('hex'));
     const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),Math.min(LIMITS.requestMs,deadline-now));
     res.on('close',()=>controller.abort());
     let terminalObserved=false;
@@ -306,4 +307,4 @@ if(require.main===module){
   }catch{console.log('BLOCKED: protected Responses proxy configuration unavailable.');process.exitCode=3;}
 }
 
-module.exports={createBudgetProxy,LIMITS};
+module.exports={createBudgetProxy,buildRequest,LIMITS};

@@ -151,6 +151,7 @@ async function construct() {
         return {
           id: c.id,
           arm,
+          scope: c.scope,
           context,
           body,
           refById: c.refById,

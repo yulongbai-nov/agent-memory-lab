@@ -9,6 +9,7 @@ const typescript = [
   "src/chatgpt-snapshot.cts",
   "src/ontology-projection.cts",
   "src/local-draft-state.cts",
+  "src/local-admission.cts",
   "src/collector.cts",
   "src/semantic-queue.cts",
   "src/semantic-validation.cts",
@@ -22,6 +23,7 @@ const lintedJavaScript = [
   "lib/adapters/chatgpt-snapshot.cjs",
   "lib/bounded-memory-relay.cjs",
   "lib/local-draft-index.cjs",
+  "lib/local-run-integrity.cjs",
   "lib/collector.cjs",
   "tests/collector.test.cjs",
   "lib/codex-discovery.cjs",
@@ -34,6 +36,8 @@ const lintedJavaScript = [
   "tests/codex-discovery.test.cjs",
   "tests/ontology-projection.test.cjs",
   "tests/local-draft-state.test.cjs",
+  "tests/local-admission.test.cjs",
+  "tests/local-run-integrity.test.cjs",
   "tests/local-derive-recovery.test.cjs",
 ];
 const files = execFileSync(

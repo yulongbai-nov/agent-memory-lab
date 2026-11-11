@@ -13,6 +13,7 @@ const typescript = [
   "src/collector.cts",
   "src/semantic-queue.cts",
   "src/semantic-validation.cts",
+  "src/find-preview.cts",
 ];
 const lintedJavaScript = [
   "benchmark/harness-e2e/codex/find-contract.cjs",
@@ -34,6 +35,8 @@ const lintedJavaScript = [
   "benchmark/harness-e2e/response-metadata.cjs",
   "tests/paired-reader.test.cjs",
   "tests/proxy-staging.test.cjs",
+  "lib/find-preview.cjs",
+  "tests/find-preview.test.cjs",
   "tests/memory-evidence-bundle-holdout.test.cjs",
   "eslint.config.mjs",
   "lib/adapters/chatgpt-snapshot.cjs",

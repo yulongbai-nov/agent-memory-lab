@@ -12,6 +12,7 @@ const options = Object.fromEntries([
 ].map(name => [name, { type: 'string' }]));
 options.recent = { type: 'boolean' };
 options['local-draft'] = { type: 'boolean' };
+options.preview = { type: 'boolean' };
 options.help = { type: 'boolean', short: 'h' };
 options['allow-annotations'] = { type: 'boolean' };
 
@@ -21,7 +22,7 @@ Commands:
   ingest --source dsh|codex|chatgpt --file FILE --instance INSTANCE --session SESSION
          [--max-records N] [--batch-size N]
   ingest-tree --source dsh|codex --root DIRECTORY --instance INSTANCE [--max-sessions N] [--offset N]
-  find [--keyword TEXT] [--from DATE] [--to DATE] [--limit N]
+  find [--keyword TEXT] [--from DATE] [--to DATE] [--limit N] [--preview]
   timeline --topic TOPIC [--from DATE] [--to DATE]
   current --topic TOPIC
   evidence --id ID --revision VERSION --source dsh|codex --instance INSTANCE --session SESSION
@@ -97,6 +98,7 @@ async function main() {
   const [command, ...extra] = positionals;
   if (values.help || !command) return usage();
   if (extra.length) throw new Error('Unexpected positional argument.');
+  if (values.preview && command !== 'find') throw new Error('--preview is supported only by local find.');
   const { operations } = require('../lib/operations.cjs');
   const readCommands = ['find', 'timeline', 'current', 'evidence', 'coverage', 'verify-original', 'semantic-status'];
   const readOnly = readCommands.includes(command) || (command === 'mcp' && !values['allow-annotations']);
@@ -108,7 +110,7 @@ async function main() {
   switch (command) {
     case 'ingest': result = await ingest(op, values); break;
     case 'ingest-tree': result = await ingestTree(op, values); break;
-    case 'find': result = await op.find(selection); break;
+    case 'find': result = await op.find(selection); if (values.preview) result = await require('../lib/find-preview.cjs').addFindPreviews(op.archive, op.scope, selection, result); break;
     case 'timeline': result = await op.timeline(selection); break;
     case 'current': result = await op.current(selection); break;
     case 'evidence': result = await op.evidence(selection); break;
@@ -203,7 +205,10 @@ async function main() {
       break;
     default: throw new Error('Unknown command. Run memory --help.');
   }
-  console.log(JSON.stringify(result, null, 2));
+  const json = JSON.stringify(result, null, 2);
+  // Opt-in preview may contain literal archive text. Escape additional terminal
+  // controls on the wire while preserving exact text after JSON parsing.
+  console.log(command === 'find' && values.preview ? json.replace(/[\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')) : json);
 }
 
 main().catch(error => {

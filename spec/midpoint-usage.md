@@ -6,6 +6,8 @@
 
 运行 `node bin/memory.cjs --help` 查看命令。本机 SQLite 迁移、旧档和回退出口见 [本机索引 ADR](adr-local-sqlite-index.md)。普通查询以只读方式打开已有档案。每条命令都用 `--project` 选定项目，`--owner` 默认 `local`。不同设备应使用不同的 `--dir` 和不同实例标识。目录和归档分别使用 0700 和 0600 权限。CLI 的 `evidence` 会返回所请求归档原文，避免将其重定向到公共 CI、日志和版本控制。
 
+本机可显式使用 `find --preview` 查看候选的归档消息片段与同版引用；默认 CLI 和 MCP 输出不变。片段不是语义总结，也不验证原件当前可读，详见[预览边界](find-preview-v0.1.md)。
+
 ## 初次回填与增量
 
 ```sh

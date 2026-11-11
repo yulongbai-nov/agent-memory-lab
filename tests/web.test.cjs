@@ -1,5 +1,13 @@
 'use strict';
 const test = require('node:test'); const assert = require('node:assert/strict'); const http = require('node:http'); const {createWebServer} = require('../lib/web/server.cjs');
+test('web exclusive next midnight preserves fractional records', async t => {
+ const source={harness:'test',instance:'synthetic',session:'s'}, scope={owner:'a',project:'p'};
+ const row=(id,time)=>({scope,source,versionId:id,item:{id,time,metadata:{topic:id}}});
+ const archive={listItems:async()=>[row('last','2026-01-01T23:59:59.999999999Z'),row('next','2026-01-02T00:00:00Z')],getItem:async()=>null,listAnnotations:async()=>[]};
+ const web=createWebServer({archive,...scope}), {port}=await web.listen();t.after(()=>web.close());
+ const result=await (await fetch(`http://127.0.0.1:${port}/api/find?from=2026-01-01T00%3A00%3A00Z&to=2026-01-02T00%3A00%3A00Z&toExclusive=true`)).json();
+ assert.deepEqual(result.topics.map(x=>x.topic),['last']);
+});
 test('local server rejects untrusted host, origin and write tokens', async t => {
  const row={scope:{owner:'a',project:'p'},source:{harness:'h',instance:'i',session:'s'},versionId:'v',item:{id:'x',kind:'message',text:'<script>alert(1)</script>'}}; let writes=0;
  const archive={listItems:async()=>[row],getItem:async ({owner,project})=>owner==='a' && project==='p' ? row : {scope:{owner,project},versionId:'secret-v',item:{id:'secret',text:'secret'}},listAnnotations:async()=>[],addAnnotation:async x=>{writes++; return x;}};

@@ -27,8 +27,14 @@ jobs:
       - name: Ensure ripgrep is available for the file baseline
         run: |
           if ! command -v rg >/dev/null; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends ripgrep
+            rg_dir="$(mktemp -d "$RUNNER_TEMP/ripgrep.XXXXXX")"
+            release="ripgrep-14.1.0-x86_64-unknown-linux-musl"
+            archive="$rg_dir/ripgrep.tar.gz"
+            curl --fail --location --silent --show-error --connect-timeout 10 --max-time 60 \
+              "https://github.com/BurntSushi/ripgrep/releases/download/14.1.0/$release.tar.gz" --output "$archive"
+            printf '%s  %s\n' 'f84757b07f425fe5cf11d87df6644691c644a5cd2348a2c670894272999d3ba7' "$archive" | sha256sum --check --status
+            tar -xzf "$archive" -C "$rg_dir" --strip-components=1 "$release/rg"
+            printf '%s\n' "$rg_dir" >> "$GITHUB_PATH"
           fi
       - name: Verify deterministic bounded memory retrieval (no model)
         run: npm run check:memory-retrieval

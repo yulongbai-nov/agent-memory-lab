@@ -88,6 +88,11 @@ async function main() {
     assert.equal(replay.collector.sessionsAttempted, 0);
     assert.equal(replay.collector.itemsImported, 0);
 
+    const helper = await fs.lstat(join(installed, "lib", "nocache-hash.py"));
+    assert.ok(helper.isFile() && !helper.isSymbolicLink());
+    const noCache = require(join(installed, "lib", "nocache-hash.cjs"));
+    assert.equal(typeof noCache.hashNoCache, "function");
+    assert.equal(typeof noCache.validateHelperResult, "function");
     const validation = require(
       join(installed, "lib", "semantic-validation.cjs"),
     );

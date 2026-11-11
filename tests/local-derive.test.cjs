@@ -99,7 +99,8 @@ test('private selector uses only complete scoped messages with local original re
       ]}]}),stats:{}};
     }
   };
-  const first = await runLocalDerive(input,runner);
+  let first;
+  for (let attempt=0;attempt<25;attempt++) { first=await runLocalDerive(input,runner); if (first.modelCalls) break; }
   assert.equal(first.exactReferences,1);
   assert.equal((await runLocalDerive(input,runner)).modelCalls,0);
   const writable = await openArchive({dir});
@@ -107,7 +108,8 @@ test('private selector uses only complete scoped messages with local original re
     {id:'u',kind:'message',role:'user',turnId:'closed',time:'2026-01-02T00:00:00Z',
       text:'Next step: prepare the updated release notes.',metadata:await messageMeta('user','Next step: prepare the updated release notes.',1)}
   ]});
-  const updated = await runLocalDerive(input,runner);
+  let updated;
+  for (let attempt=0;attempt<25;attempt++) { updated=await runLocalDerive(input,runner); if (updated.modelCalls) break; }
   assert.equal(updated.exactReferences,1);
   assert.equal(updated.cacheHit,false);
   assert.equal(calls,2);

@@ -18,6 +18,7 @@
     "src/bounded-memory-read.cts",
     "src/semantic-validation.cts",
     "src/semantic-queue.cts",
+    "src/local-draft-state.cts",
     "src/collector.cts"
   ]
 }

@@ -20,6 +20,9 @@ const safeReasons = [
   "ORIGINAL_UNAVAILABLE",
   "INPUT_LIMIT",
   "OUTPUT_WRITE_FAILED",
+  "CANCELLED",
+  "EXECUTABLE_CHANGED",
+  "CONFIG_CHANGED",
 ] as const;
 type Reason = (typeof safeReasons)[number];
 type Ref = {

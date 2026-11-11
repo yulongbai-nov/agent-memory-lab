@@ -170,7 +170,16 @@ async function main() {
     case 'daily': {
       const { dailyReview } = require('../lib/daily.cjs');
       const manifest = values.manifest ? JSON.parse(await readFile(values.manifest, 'utf8')) : [];
-      result = await dailyReview(op, manifest, input => input.root ? require('../lib/intake.cjs').intakeDirectory(op, input, ingest) : ingest(op, input), {localDraft:values['local-draft'] === true});
+      const localDraft=values['local-draft'] === true;let exitSignal=0;
+      const localDraftRunner=localDraft?async args=>{
+        const controller=new AbortController();
+        const interrupt=()=>{exitSignal ||= 130;controller.abort();},terminate=()=>{exitSignal ||= 143;controller.abort();};
+        process.once('SIGINT',interrupt);process.once('SIGTERM',terminate);
+        try {return await require('../lib/local-derive.cjs').runLocalDerive({...args,signal:controller.signal});}
+        finally {process.removeListener('SIGINT',interrupt);process.removeListener('SIGTERM',terminate);}
+      }:undefined;
+      result = await dailyReview(op, manifest, input => input.root ? require('../lib/intake.cjs').intakeDirectory(op, input, ingest) : ingest(op, input), {localDraft,...(localDraftRunner?{localDraftRunner}:{})});
+      if(exitSignal)process.exitCode=exitSignal;
       break;
     }
     case 'serve': {

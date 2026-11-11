@@ -33,6 +33,7 @@ const lintedJavaScript = [
   "lib/adapters/chatgpt-snapshot.cjs",
   "lib/bounded-memory-relay.cjs",
   "lib/local-draft-index.cjs",
+  "lib/nocache-hash.cjs",
   "lib/local-run-integrity.cjs",
   "lib/collector.cjs",
   "tests/collector.test.cjs",
@@ -47,6 +48,7 @@ const lintedJavaScript = [
   "tests/ontology-projection.test.cjs",
   "tests/local-draft-state.test.cjs",
   "tests/local-admission.test.cjs",
+  "tests/nocache-hash.test.cjs",
   "tests/local-run-integrity.test.cjs",
   "tests/local-derive-recovery.test.cjs",
 ];

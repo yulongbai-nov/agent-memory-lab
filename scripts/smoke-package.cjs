@@ -2,6 +2,7 @@
 const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
 const { existsSync, mkdtempSync, rmSync } = require("node:fs");
+const fs = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { basename, join } = require("node:path");
 const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
@@ -34,6 +35,30 @@ async function main() {
     ]);
     const installed = join(prefix, "node_modules", "agent-memory-lab");
     assert.equal(existsSync(join(prefix, "node_modules", "typescript")), false);
+    const collector = require(join(installed, "lib", "collector.cjs"));
+    assert.equal(typeof collector.collectChanged, "function");
+    const source = join(work, "collector-source");
+    const collectorArchive = join(work, "collector-archive");
+    await fs.mkdir(source);
+    await fs.mkdir(collectorArchive, { mode: 0o700 });
+    const session = join(source, "fixture.jsonl");
+    await fs.writeFile(session, "synthetic first");
+    const operation = {
+      scope: { owner: "fixture", project: "fixture" },
+      archive: { dir: collectorArchive },
+    };
+    const input = { root: source, source: "codex", instance: "fixture" };
+    const ingest = async () => ({ itemsImported: 1 });
+    assert.equal(
+      (await collector.collectChanged(operation, input, ingest)).baseline,
+      true,
+    );
+    await fs.appendFile(session, " synthetic second");
+    assert.equal(
+      (await collector.collectChanged(operation, input, ingest)).itemsImported,
+      1,
+    );
+
     const validation = require(
       join(installed, "lib", "semantic-validation.cjs"),
     );

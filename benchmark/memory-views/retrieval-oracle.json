@@ -1,0 +1,38 @@
+{
+  "temporal-slot": {
+    "status": "resolved",
+    "facts": ["Tuesday", "Wednesday"],
+    "support": [
+      ["clarify", "move"],
+      ["clarify", "repeat-move"]
+    ],
+    "relevant": ["original", "clarify", "move", "repeat-move"]
+  },
+  "revision-kind": {
+    "status": "resolved",
+    "facts": ["correction", "change"],
+    "support": [["original", "clarify", "move"]],
+    "relevant": ["original", "clarify", "move", "repeat-move"]
+  },
+  "dependency-time": {
+    "status": "resolved",
+    "facts": ["10:05", "12:45", "no"],
+    "support": [["relation"]],
+    "relevant": ["relation"]
+  },
+  "dependency": {
+    "status": "resolved",
+    "facts": ["Prepare the checklist.", "Wednesday"],
+    "support": [
+      ["task", "relation", "move"],
+      ["task", "relation", "repeat-move"]
+    ],
+    "relevant": ["task", "relation", "move", "repeat-move"]
+  },
+  "historical": {
+    "status": "unknown",
+    "facts": [],
+    "support": [["clarify"]],
+    "relevant": ["clarify", "original"]
+  }
+}

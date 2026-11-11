@@ -1,0 +1,22 @@
+[
+  {
+    "id": "temporal-slot",
+    "text": "Looking back from 13:00 UTC, what was the Harbor rehearsal slot at 11:59 and at 12:30 UTC? Return the two weekdays in order."
+  },
+  {
+    "id": "revision-kind",
+    "text": "Classify the 09:05 clarification and the 12:00 reschedule in order. Cite the original decision and the source of each named event."
+  },
+  {
+    "id": "dependency-time",
+    "text": "In the later archive, when did the checklist dependency take effect, when did it become known, and could that dependency be confirmed from the recorded knowledge by 12:30 UTC?"
+  },
+  {
+    "id": "dependency",
+    "text": "Using knowledge through 13:00 UTC, at the valid time 12:30 UTC, which open action depended on the Harbor rehearsal slot, and which weekday was that slot?"
+  },
+  {
+    "id": "historical",
+    "text": "Can the archive establish that the correction review was already known at 09:06 UTC? If unknown, cite the source of the named clarification."
+  }
+]

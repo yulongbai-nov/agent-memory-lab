@@ -116,6 +116,24 @@ async function seed(dir, retrievalCheck = false) {
       "12:15:00",
     ],
   ];
+  if (retrievalCheck) {
+    messages.find((m) => m[0] === "task")[3] =
+      "Prepare the checklist. It is still open.";
+    const relation = messages.find((m) => m[0] === "relation");
+    relation[1] = "codex";
+    relation[3] =
+      "The open checklist depends on the Harbor rehearsal slot, effective retrospectively from 10:05 UTC.";
+    relation[4] = "12:40:00";
+    messages.find((m) => m[0] === "move")[3] =
+      "Effective at noon UTC, move the Harbor rehearsal to Wednesday.";
+    messages.push([
+      "repeat-move",
+      "dsh",
+      topic,
+      "The confirmed Harbor rehearsal moved to Wednesday effective at noon UTC.",
+      "12:25:00",
+    ]);
+  }
   const refs = new Map();
   const topics = new Map();
   if (retrievalCheck) {
@@ -215,7 +233,8 @@ async function seed(dir, retrievalCheck = false) {
       taskId: "checklist",
       decisionId: "decision",
       evidence: refs.get("relation"),
-      knownAt: "2026-01-01T10:06:00Z",
+      knownAt: retrievalCheck ? "2026-01-01T12:45:00Z" : "2026-01-01T10:06:00Z",
+      ...(retrievalCheck && { effectiveAt: "2026-01-01T10:05:00Z" }),
     },
   ];
   const foreignRows = [];
@@ -241,7 +260,12 @@ async function seed(dir, retrievalCheck = false) {
       type: "source",
       topic,
       scope: otherScope,
-      ref: handle({ id: item.id, revision: foreign.versionId }),
+      ref: handle({
+        id: item.id,
+        revision: foreign.versionId,
+        source,
+        scope: otherScope,
+      }),
       harness: source.harness,
       time: item.time,
       text: item.text,
@@ -249,7 +273,16 @@ async function seed(dir, retrievalCheck = false) {
   }
   return { archive, refs, topics, dependencies, foreignRows };
 }
-const handle = (ref) => `${ref.id}@${ref.revision}`;
+const handle = (ref) =>
+  JSON.stringify([
+    ref.scope?.owner ?? scope.owner,
+    ref.scope?.project ?? scope.project,
+    ref.source?.harness,
+    ref.source?.instance,
+    ref.source?.session,
+    ref.id,
+    ref.revision,
+  ]);
 
 async function makeCorpus(dir, fixture) {
   const op = await operations({ ...scope, dir, readOnly: true });
@@ -261,6 +294,7 @@ async function makeCorpus(dir, fixture) {
     sourceRows.push({
       id: ref.id,
       type: "source",
+      scope,
       topic: fixture.topics.get(ref.id),
       ref: handle(ref),
       harness: exact.source.harness,
@@ -272,6 +306,7 @@ async function makeCorpus(dir, fixture) {
   const reviewRows = reviews.map((review) => ({
     id: review.id,
     type: review.kind,
+    scope,
     topic: review.topic,
     text: review.text,
     target: handle(review.target),
@@ -285,11 +320,13 @@ async function makeCorpus(dir, fixture) {
   const relationRows = fixture.dependencies.map((d) => ({
     id: d.id,
     type: "dependency",
+    scope,
     topic: reviews.find((r) => r.id === d.taskId).topic,
     task: d.taskId,
     decision: d.decisionId,
     approved: d.approved,
     evidence: handle(d.evidence),
+    effectiveAt: d.effectiveAt ?? null,
     knownAt: d.knownAt,
   }));
   return { op, sourceRows, reviewRows, relationRows };
@@ -298,7 +335,15 @@ async function makeCorpus(dir, fixture) {
 async function buildViews(dir, fixture, corpus) {
   const { op, sourceRows, reviewRows, relationRows } = corpus;
   const all = [...sourceRows, ...reviewRows, ...relationRows];
-  const byId = new Map(all.map((row) => [row.id, row]));
+  const byId = new Map(
+    all.filter((row) => row.type !== "source").map((row) => [row.id, row]),
+  );
+  const byRef = new Map(sourceRows.map((row) => [row.ref, row]));
+  const exactSource = (ref) => {
+    const row = byRef.get(typeof ref === "string" ? ref : handle(ref));
+    assert.ok(row, "Unknown exact source revision");
+    return row;
+  };
   const buildMs = {};
   let start = performance.now();
   const journal = join(dir, "journal.md"),
@@ -329,6 +374,32 @@ async function buildViews(dir, fixture, corpus) {
     mode: "current-known",
   });
   assert.equal(dependency.decision.text, "Wednesday");
+  if (fixture.dependencies[0].effectiveAt) {
+    assert.equal(
+      answerDependency({
+        projection: graph,
+        decisionRootId: "decision",
+        mode: "current-known",
+        knowledgeCutoff: "2026-01-01T12:30:00Z",
+      }).tasks.length,
+      0,
+    );
+    assert.equal(
+      answerDependency({
+        projection: graph,
+        decisionRootId: "decision",
+        mode: "current-known",
+        knowledgeCutoff: "2026-01-01T13:00:00Z",
+      }).tasks.length,
+      1,
+    );
+    assert.equal(
+      graph.corrections.find((row) => row.id === "clarification")
+        .effectiveTimeKnown,
+      false,
+    );
+  }
+
   assert.equal(
     dependency.tasks[0].relationEvidence.revision,
     fixture.refs.get("relation").revision,
@@ -360,32 +431,25 @@ async function buildViews(dir, fixture, corpus) {
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line.slice(2)))
-        .filter(
-          (row) =>
-            !row.scope ||
-            (row.scope.owner === scope.owner &&
-              row.scope.project === scope.project),
-        ),
+        .filter((row) => row.topic === topic),
     structured: async () => {
       const page = await op.timeline({ topic, limit: 20 });
       assert.equal(page.coverage.has_more, false);
       const ids = page.rows
-        .flatMap((row) => [
-          row.review_id,
-          ...row.annotations.map((a) => a.id),
-          row.citation.id,
-        ])
+        .flatMap((row) => [row.review_id, ...row.annotations.map((a) => a.id)])
         .filter(Boolean);
       const reviewIds = new Set(ids);
-      for (const relation of relationRows) {
+      for (const relation of relationRows)
         if (reviewIds.has(relation.task) && reviewIds.has(relation.decision))
           ids.push(relation.id);
-      }
-      for (const id of [...ids]) {
-        const row = byId.get(id);
-        if (row?.evidence) ids.push(row.evidence.split("@", 1)[0]);
-      }
-      return getRows(ids);
+      const reviewRows = getRows(ids);
+      const sources = page.rows.map((row) => exactSource(row.citation));
+      for (const row of reviewRows)
+        for (const ref of citedBy(row)) sources.push(exactSource(ref));
+      return [
+        ...reviewRows,
+        ...new Map(sources.map((row) => [row.ref, row])).values(),
+      ];
     },
     graph: () => {
       const scoped = new Set(
@@ -393,17 +457,26 @@ async function buildViews(dir, fixture, corpus) {
           .filter((node) => node.topic === topic)
           .map((node) => node.id),
       );
-      const ids = [];
+      const ids = [],
+        sources = [];
       for (const edge of graph.edges) {
         if (!scoped.has(edge.to)) continue;
-        if (edge.kind === "DEPENDS_ON") ids.push(edge.id, edge.from);
-        else if (edge.kind === "CORRECTS") ids.push(edge.from);
-        else ids.push(edge.from);
-        if (edge.evidence) ids.push(edge.evidence.id);
+        ids.push(edge.from);
+        if (edge.kind === "DEPENDS_ON") ids.push(edge.id);
+        if (edge.evidence) sources.push(exactSource(edge.evidence));
       }
       for (const node of graph.nodes)
-        if (scoped.has(node.id)) ids.push(node.id, node.evidence.id);
-      return getRows(ids);
+        if (scoped.has(node.id)) {
+          ids.push(node.id);
+          sources.push(exactSource(node.evidence));
+        }
+      const rows = getRows(ids);
+      for (const row of rows)
+        for (const ref of citedBy(row)) sources.push(exactSource(ref));
+      return [
+        ...rows,
+        ...new Map(sources.map((row) => [row.ref, row])).values(),
+      ];
     },
   };
 }
@@ -466,11 +539,54 @@ const terms = (text) =>
   );
 const citedBy = (row) => [row.target, row.evidence].filter(Boolean);
 
+function packEvidence(sources, records) {
+  const handles = sources.map((source) => source.ref);
+  return {
+    sources: sources.map(({ ref, time, text, scope }) => ({
+      ref,
+      time,
+      text,
+      scope,
+    })),
+    reviews: records
+      .filter(
+        (row) =>
+          citedBy(row).length &&
+          citedBy(row).every((ref) => handles.includes(ref)),
+      )
+      .map((row) => ({
+        scope: row.scope,
+        id: row.id,
+        type: row.type,
+        ...(row.text != null && { text: row.text }),
+        ...(row.target && { target: handles.indexOf(row.target) }),
+        ...(row.evidence && { evidence: handles.indexOf(row.evidence) }),
+        ...(row.revises && { revises: row.revises }),
+        ...(row.task && { task: row.task }),
+        ...(row.decision && { decision: row.decision }),
+        ...(row.approved !== undefined && { approved: row.approved }),
+        effectiveAt: row.effectiveAt ?? null,
+        knownAt: row.knownAt ?? null,
+        ...(row.basis && { basis: row.basis }),
+        ...(row.lifecycle && { lifecycle: row.lifecycle }),
+      })),
+  };
+}
 function selectEvidence(question, rows) {
   const words = terms(question.text);
   for (const word of terms(topic)) words.delete(word);
-  const sources = rows.filter((row) => row.type === "source");
-  const records = rows.filter((row) => row.type !== "source");
+  const sources = rows.filter(
+    (row) =>
+      row.type === "source" &&
+      row.scope?.owner === scope.owner &&
+      row.scope?.project === scope.project,
+  );
+  const records = rows.filter(
+    (row) =>
+      row.type !== "source" &&
+      row.scope?.owner === scope.owner &&
+      row.scope?.project === scope.project,
+  );
   const rank = (source) => {
     const attached = records.filter((row) => citedBy(row).includes(source.ref));
     const content = terms(
@@ -489,18 +605,11 @@ function selectEvidence(question, rows) {
   // Stable ties retain the candidate ordering of the underlying view.
   const ranked = sources
     .map((source) => ({ source, score: rank(source) }))
-    .sort((a, b) => b.score - a.score);
+    .sort(
+      (a, b) => b.score - a.score || a.source.ref.localeCompare(b.source.ref),
+    );
   const selected = [];
-  const pack = (sources) => {
-    const handles = new Set(sources.map((source) => source.ref));
-    return {
-      sources,
-      reviews: records.filter(
-        (row) =>
-          citedBy(row).length && citedBy(row).every((ref) => handles.has(ref)),
-      ),
-    };
-  };
+  const pack = (sources) => packEvidence(sources, records);
   for (const { source } of ranked) {
     if (selected.length === retrievalBudget.topK) break;
     if (
@@ -512,20 +621,86 @@ function selectEvidence(question, rows) {
   return pack(selected);
 }
 
+function relationAvailable(question, context, relationRef) {
+  if (!["dependency-time", "dependency"].includes(question)) return true;
+  return context.reviews.some(
+    (row) =>
+      row.type === "dependency" &&
+      row.approved === true &&
+      row.task === "checklist" &&
+      row.decision === "decision" &&
+      row.effectiveAt === "2026-01-01T10:05:00Z" &&
+      row.knownAt === "2026-01-01T12:45:00Z" &&
+      context.sources[row.evidence]?.ref === relationRef,
+  );
+}
+function evaluate(oracle, id, output, context, refs) {
+  const expected = oracle[id];
+  if (!expected) throw Error("Unknown question");
+  const citations =
+    Array.isArray(output?.citations) &&
+    output.citations.every((x) => typeof x === "string")
+      ? output.citations
+      : [];
+  const provided = new Set(context.sources.map((row) => row.ref));
+  const known = new Map([...refs].map(([key, value]) => [value, key]));
+  const invalid = citations.filter(
+    (ref) => !provided.has(ref) || !known.has(ref),
+  );
+  const irrelevant = citations.filter(
+    (ref) => known.has(ref) && !expected.relevant.includes(known.get(ref)),
+  );
+  const facts =
+    Array.isArray(output?.facts) &&
+    output.facts.every((x) => typeof x === "string")
+      ? output.facts.map(normalize)
+      : null;
+  const answerCorrect =
+    output?.status === expected.status &&
+    JSON.stringify(facts) === JSON.stringify(expected.facts.map(normalize));
+  const supportCovered =
+    expected.support.some((set) =>
+      set.every((key) => citations.includes(refs.get(key))),
+    ) && relationAvailable(id, context, refs.get("relation"));
+  return {
+    answerCorrect,
+    supportCovered,
+    invalidCitations: invalid.length,
+    irrelevantCitations: irrelevant.length,
+    pass:
+      answerCorrect && supportCovered && !invalid.length && !irrelevant.length,
+  };
+}
 async function runRetrievalCheck(fixture, views) {
   const foreignRef = fixture.foreignRows[0].ref;
   const lookup = async (ref, selectedScope) => {
-    const parts = typeof ref === "string" ? ref.split("@") : [];
-    if (parts.length !== 2 || !parts.every(Boolean)) return null;
-    const [id, revision] = parts;
+    let parts;
+    try {
+      parts = JSON.parse(ref);
+    } catch {
+      return null;
+    }
+    if (
+      !Array.isArray(parts) ||
+      parts.length !== 7 ||
+      !parts.every((x) => typeof x === "string" && x)
+    )
+      return null;
+    const [owner, project, harness, instance, session, id, revision] = parts;
+    if (owner !== selectedScope.owner || project !== selectedScope.project)
+      return null;
     const record = await fixture.archive.getItem({
       ...selectedScope,
+      source: { harness, instance, session },
       id,
       revision,
     });
     return record &&
       record.item.id === id &&
       record.versionId === revision &&
+      record.source.harness === harness &&
+      record.source.instance === instance &&
+      record.source.session === session &&
       record.scope.owner === selectedScope.owner &&
       record.scope.project === selectedScope.project
       ? record
@@ -543,55 +718,230 @@ async function runRetrievalCheck(fixture, views) {
     }
     return { wrongScope, unresolved };
   };
-  const results = [];
-  for (const question of questions) {
+  const staged = [];
+  const prompts = require("./retrieval-spec.json");
+  for (const question of prompts) {
     for (const arm of arms) {
       const start = performance.now();
       const rows = await views[arm]();
       const context = selectEvidence(question, rows);
-      const retrievalMs = round(performance.now() - start);
       const selectedRefs = context.sources.map((row) => row.ref);
-      const requiredRefs = question.refs.map((id) =>
-        handle(fixture.refs.get(id)),
-      );
       const referenced = [
-        ...new Set([...selectedRefs, ...context.reviews.flatMap(citedBy)]),
+        ...new Set([
+          ...selectedRefs,
+          ...context.reviews.flatMap((row) =>
+            [row.target, row.evidence]
+              .filter(Number.isInteger)
+              .map((index) => selectedRefs[index]),
+          ),
+        ]),
       ];
-      const { wrongScope, unresolved } = await auditReferences(referenced);
+      const audit = await auditReferences(referenced);
       const candidates = await auditReferences(
         new Set(
           rows.flatMap((row) => [row.ref, ...citedBy(row)].filter(Boolean)),
         ),
       );
-      const supportHits = requiredRefs.filter((ref) =>
-        selectedRefs.includes(ref),
-      ).length;
+      if (audit.wrongScope || audit.unresolved)
+        throw Error("Unsafe evidence in reader context");
+      staged.push({
+        question: question.id,
+        arm,
+        rows,
+        context,
+        selectedRefs,
+        referenced,
+        audit,
+        candidates,
+        retrievalMs: round(performance.now() - start),
+      });
+    }
+  }
+  // The oracle is not loaded until all candidates and contexts have been fixed.
+  const oracle = require("./retrieval-oracle.json");
+  const mapped = new Map(
+    [...fixture.refs].map(([id, ref]) => [id, handle(ref)]),
+  );
+  const results = staged.map(
+    ({
+      question,
+      arm,
+      rows,
+      context,
+      selectedRefs,
+      referenced,
+      audit,
+      candidates,
+      retrievalMs,
+    }) => {
+      const acceptable = oracle[question].support.map((set) =>
+        set.map((id) => mapped.get(id)),
+      );
+      const fullSupport =
+        acceptable.some((set) =>
+          set.every((ref) => selectedRefs.includes(ref)),
+        ) && relationAvailable(question, context, mapped.get("relation"));
+      const scopedRows = rows.filter(
+        (row) =>
+          row.scope?.owner === scope.owner &&
+          row.scope?.project === scope.project,
+      );
+      const candidateSources = scopedRows.filter(
+        (row) => row.type === "source",
+      );
+      const candidateContext = packEvidence(
+        candidateSources,
+        scopedRows.filter((row) => row.type !== "source"),
+      );
+      const candidateRefs = candidateSources.map((row) => row.ref);
+      const candidateFullSupport =
+        acceptable.some((set) =>
+          set.every((ref) => candidateRefs.includes(ref)),
+        ) &&
+        relationAvailable(question, candidateContext, mapped.get("relation"));
       const contextBytes = bytes(JSON.stringify(context));
       assert.ok(
         selectedRefs.length <= retrievalBudget.topK &&
           contextBytes <= retrievalBudget.contextBytes,
       );
-      results.push({
-        question: question.id,
+      return {
+        question,
         arm,
         candidateVersions: rows.filter((row) => row.type === "source").length,
         selectedRefs,
-        requiredRefs,
-        supportHits,
-        supportTotal: requiredRefs.length,
-        fullSupport: supportHits === requiredRefs.length,
-        wrongScope,
-        unresolved,
+        candidateRefs: rows
+          .filter((row) => row.type === "source")
+          .map((row) => row.ref),
+        candidateFullSupport,
+        fullSupport,
+        ...audit,
         candidateWrongScope: candidates.wrongScope,
         candidateUnresolved: candidates.unresolved,
-        resolvedRefs: referenced.length - wrongScope - unresolved,
+        resolvedRefs: referenced.length - audit.wrongScope - audit.unresolved,
         contextBytes,
         retrievalMs,
-      });
-    }
+      };
+    },
+  );
+  // Confirm the agreed budget is feasible without feeding oracle information into retrieval.
+  const allRows = [...(await views.file())].filter(
+    (row) => row.scope?.project === scope.project,
+  );
+  for (const question of prompts) {
+    const sets = oracle[question.id].support;
+    assert.ok(
+      sets.some((set) => {
+        const sources = allRows.filter(
+          (row) => row.type === "source" && set.includes(row.id),
+        );
+        const handles = new Set(sources.map((row) => row.ref));
+        const reviews = allRows.filter(
+          (row) =>
+            row.type !== "source" &&
+            citedBy(row).length &&
+            citedBy(row).every((ref) => handles.has(ref)),
+        );
+        return (
+          sources.length === set.length &&
+          bytes(JSON.stringify(packEvidence(sources, reviews))) <=
+            retrievalBudget.contextBytes
+        );
+      }),
+      `No valid support set fits budget: ${question.id}`,
+    );
   }
+  const contextFor = (ids) =>
+    packEvidence(
+      allRows.filter((row) => row.type === "source" && ids.includes(row.id)),
+      allRows.filter((row) => row.type !== "source"),
+    );
+  const answer = (id, cites, context = contextFor(cites)) =>
+    evaluate(
+      oracle,
+      id,
+      {
+        status: oracle[id].status,
+        facts: oracle[id].facts,
+        citations: cites.map((x) => mapped.get(x)),
+      },
+      context,
+      mapped,
+    );
+  assert.ok(answer("dependency", ["task", "relation", "repeat-move"]).pass);
+  assert.equal(answer("dependency", ["task", "move"]).pass, false);
+  assert.equal(answer("dependency", ["task", "repeat-move"]).pass, false);
+  assert.equal(
+    answer("revision-kind", ["original", "clarify", "repeat-move"]).pass,
+    false,
+  );
+  assert.ok(answer("revision-kind", ["original", "clarify", "move"]).pass);
+  const relationContext = contextFor(["task", "relation", "repeat-move"]);
+  assert.equal(
+    answer("dependency", ["task", "relation", "repeat-move"], {
+      sources: relationContext.sources,
+      reviews: [],
+    }).pass,
+    false,
+  );
+  const clarification = contextFor(["clarify"]);
+  assert.ok(
+    evaluate(
+      oracle,
+      "historical",
+      { status: "unknown", facts: [], citations: [mapped.get("clarify")] },
+      clarification,
+      mapped,
+    ).pass,
+  );
+  assert.equal(
+    evaluate(
+      oracle,
+      "historical",
+      {
+        status: "resolved",
+        facts: ["Tuesday"],
+        citations: [mapped.get("clarify")],
+      },
+      clarification,
+      mapped,
+    ).pass,
+    false,
+  );
+  assert.equal(
+    evaluate(
+      oracle,
+      "historical",
+      { status: "unknown", facts: [], citations: [foreignRef] },
+      clarification,
+      mapped,
+    ).pass,
+    false,
+  );
+  assert.equal(
+    evaluate(
+      oracle,
+      "historical",
+      { status: "unknown", facts: [], citations: [mapped.get("original")] },
+      clarification,
+      mapped,
+    ).pass,
+    false,
+  );
+  const badRef = JSON.parse(mapped.get("clarify"));
+  badRef[6] = "wrong-revision";
+  assert.equal(
+    evaluate(
+      oracle,
+      "historical",
+      { status: "unknown", facts: [], citations: [JSON.stringify(badRef)] },
+      clarification,
+      mapped,
+    ).pass,
+    false,
+  );
+
   return {
-    fixture: "synthetic-memory-retrieval-v1",
+    fixture: "synthetic-memory-retrieval-v2",
     budget: retrievalBudget,
     crossScopeCollisionRejected: true,
     externalModelCalls: 0,
@@ -812,14 +1162,13 @@ async function checkRetrieval() {
   for (const trial of [first, second]) {
     assert.equal(trial.externalModelCalls, 0);
     assert.equal(trial.crossScopeCollisionRejected, true);
-    assert.equal(trial.results.length, questions.length * arms.length);
+    assert.equal(
+      trial.results.length,
+      require("./retrieval-spec.json").length * arms.length,
+    );
     for (const row of trial.results) {
       const label = `${row.arm}/${row.question}`;
-      assert.equal(
-        row.candidateWrongScope + row.wrongScope,
-        0,
-        `Cross-project evidence in ${label}`,
-      );
+      assert.equal(row.wrongScope, 0, `Cross-project evidence in ${label}`);
       assert.equal(
         row.candidateUnresolved + row.unresolved,
         0,

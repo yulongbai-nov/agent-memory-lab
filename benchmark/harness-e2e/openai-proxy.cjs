@@ -7,6 +7,7 @@ const { constants, closeSync, fstatSync, openSync, readFileSync } = require('nod
 const { homedir } = require('node:os');
 const { join } = require('node:path');
 const { StringDecoder } = require('node:string_decoder');
+const { safeMetadata } = require('./response-metadata.cjs');
 
 const MODEL = 'gpt-6-luna';
 const EFFORT = 'low';
@@ -106,7 +107,7 @@ function readBody(req, limit) {
     req.on('end',()=>{if(!settled){settled=true;resolve({bytes,text:Buffer.concat(chunks).toString('utf8')});}});
   });
 }
-async function providerErrorCode(response) {
+async function providerError(response) {
   const declared = Number(response.headers.get('content-length') || 0);
   if (declared > 16384 || !response.body) return;
   let size=0;
@@ -117,22 +118,23 @@ async function providerErrorCode(response) {
       if(size>16384)return;
       chunks.push(part);
     }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')).error?.code;
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {}
 }
-function completedResponse(body, contentType) {
-  try {
-    if (contentType.startsWith('application/json')) {
-      const response=JSON.parse(body);
-      return response.status==='completed' ? response : null;
-    }
-    for (const line of body.split(/\r?\n/)) {
-      if (!line.startsWith('data:') || !line.slice(5).trimStart().startsWith('{')) continue;
+function responseSnapshots(body, contentType) {
+  const terminal = new Set(['completed','incomplete','failed','cancelled']);
+  if (contentType.startsWith('application/json')) {
+    try { const result=JSON.parse(body); return result && typeof result==='object' && (terminal.has(result.status)||result.usage) ? [{response:result,terminal:terminal.has(result.status)}] : []; } catch { return []; }
+  }
+  const found=[];
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.startsWith('data:') || !line.slice(5).trimStart().startsWith('{')) continue;
+    try {
       const event=JSON.parse(line.slice(5));
-      if (event.type==='response.completed' && event.response?.status==='completed') return event.response;
-    }
-  } catch {}
-  return null;
+      if (typeof event.type==='string' && event.type.startsWith('response.') && event.response && (terminal.has(event.response.status)||event.response.usage)) found.push({response:event.response,terminal:terminal.has(event.response.status)&&event.type===`response.${event.response.status}`});
+    } catch {}
+  }
+  return found;
 }
 
 function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
@@ -140,7 +142,7 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
       !/^[a-zA-Z0-9_-]{24,128}$/.test(gateToken)) throw Error('proxy credentials unavailable');
   const stats={requests:0,inputBytes:0,providerOk:0,providerFailed:0,authFailures:0,rateLimits:0,
     modelUnavailable:0,providerRejections:0,gateRejections:0,toolChoiceRejections:0,budgetRefusals:0,deadlineRefusals:0,
-    terminalCompleted:0,missingTerminal:0,missingModel:0,unexpectedModel:0,
+    terminalCompleted:0,terminalIncomplete:0,terminalFailed:0,terminalCancelled:0,missingTerminal:0,missingModel:0,unexpectedModel:0,
     effortConfirmed:0,effortUnreported:0,unexpectedEffort:0,
     clientClosedBeforeTerminal:0,transportFailures:0};
   const models=new Set();
@@ -182,9 +184,30 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
     const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),Math.min(LIMITS.requestMs,deadline-now));
     res.on('close',()=>controller.abort());
     let terminalObserved=false;
-    const observeTerminal=completed=>{
-      if(!completed||terminalObserved)return;
+    const usageSeen=new Map();
+    const countUsage=record=>{
+      for(const [key,value] of Object.entries(usage)) {
+        const tokens=record?.usage?.[key];
+        if(Number.isSafeInteger(tokens)&&tokens>=0){
+          if(!usageSeen.has(key)){usageSeen.set(key,tokens);value.reported++;value.tokens+=tokens;}
+          else {value.tokens+=tokens-usageSeen.get(key);usageSeen.set(key,tokens);}
+        }
+      }
+    };
+    const observeTerminal=snapshot=>{
+      const completed=snapshot?.response;
+      if(!completed || (terminalObserved && !snapshot.terminal))return;
+      countUsage(completed);
+      if(!snapshot.terminal)return;
+      if(terminalObserved)return;
       terminalObserved=true;
+      if(completed.status!=='completed'){
+        if(completed.status==='incomplete')stats.terminalIncomplete++;
+        else if(completed.status==='failed')stats.terminalFailed++;
+        else if(completed.status==='cancelled')stats.terminalCancelled++;
+        stats.providerFailed++;
+        return;
+      }
       stats.terminalCompleted++;
       if(typeof completed.model!=='string'){stats.missingModel++;stats.providerFailed++;}
       else if(!/^gpt-6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(completed.model)){
@@ -196,10 +219,6 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
         else stats.effortUnreported++;
         models.add(completed.model);
         stats.providerOk++;
-        for(const [key,value] of Object.entries(usage)) {
-          const tokens=completed.usage?.[key];
-          if(Number.isSafeInteger(tokens)&&tokens>=0){value.reported++;value.tokens+=tokens;}
-        }
       }
     };
     try{
@@ -207,14 +226,16 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
         headers:{authorization:'Bearer '+apiKey,'content-type':'application/json'},body:data});
       if(!upstream.ok||!upstream.body){
         stats.providerFailed++;
+        const failure=upstream.body ? await providerError(upstream) : null;
+        countUsage(failure?.response ?? failure);
         if(upstream.status===401||upstream.status===403)stats.authFailures++;
         else if(upstream.status===429)stats.rateLimits++;
         else if([400,404,422].includes(upstream.status)){
-          if(await providerErrorCode(upstream)==='model_not_found')stats.modelUnavailable++;
+          if(failure?.error?.code==='model_not_found')stats.modelUnavailable++;
           else stats.providerRejections++;
         }
         if(!upstream.bodyUsed)await upstream.body?.cancel();
-        return send(502,{error:'provider failed'});
+        return send(502,{error:'provider failed',provider: safeMetadata(failure?.response ?? failure)});
       }
       const type=upstream.headers.get('content-type')||'';
       if(!/^application\/json\b|^text\/event-stream\b/.test(type)){stats.providerFailed++;await upstream.body.cancel();return send(502,{error:'provider format rejected'});}
@@ -225,14 +246,14 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
       for await(const part of upstream.body){
         received+=part.length;
         if(received>LIMITS.responseBytes)throw Error('response limit');
-        if(!terminalObserved){
+        {
           pending+=decoder.write(part);
           if(type.startsWith('text/event-stream')){
             const lastLine=pending.lastIndexOf('\n');
             if(lastLine>=0){
               // Codex can close the downstream connection as soon as this
               // event arrives, before the upstream transport reaches EOF.
-              observeTerminal(completedResponse(pending.slice(0,lastLine+1),type));
+              responseSnapshots(pending.slice(0,lastLine+1),type).forEach(observeTerminal);
               pending=pending.slice(lastLine+1);
             }
           }
@@ -241,7 +262,7 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
         if(!res.write(part)&&!res.destroyed)await Promise.race([once(res,'drain'),once(res,'close')]);
         if(res.destroyed)throw Error('client closed');
       }
-      if(!terminalObserved)observeTerminal(completedResponse(pending+decoder.end(),type));
+      responseSnapshots(pending+decoder.end(),type).forEach(observeTerminal);
       if(!terminalObserved){stats.missingTerminal++;stats.providerFailed++;}
       res.end();
     }catch{

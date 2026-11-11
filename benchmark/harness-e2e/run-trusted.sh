@@ -42,10 +42,8 @@ trap 'exit 130' INT TERM
 # Keys are excluded from both builds and the CLI containers.
 dock build -t "$DSH_IMAGE" "$HARNESS/dsh"
 dock build -t "$CODEX_IMAGE" "$HARNESS/codex"
-mkdir "$WORK/proxy"
-cp "$HARNESS/openai-proxy.cjs" "$WORK/proxy/"
-printf 'FROM %s\nCOPY openai-proxy.cjs /opt/openai-proxy.cjs\nUSER node\n' "$NODE_IMAGE" |
-  dock build -f - -t "$PROXY_IMAGE" "$WORK/proxy"
+clean sh "$HARNESS/stage-proxy.sh" "$WORK/proxy" "$NODE_IMAGE"
+dock build -f "$WORK/proxy/Dockerfile" -t "$PROXY_IMAGE" "$WORK/proxy"
 dock network create --internal --subnet 172.28.88.0/24 "$NETWORK" >/dev/null
 MEMORY_LUNA_API_KEY="$proxy_key" docker create --name "$PROXY" --network "$NETWORK" --ip 172.28.88.2 --memory 512m --cpus 1 --pids-limit 64 \
   --cap-drop ALL --security-opt no-new-privileges --read-only \

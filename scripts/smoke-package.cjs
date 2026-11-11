@@ -1,6 +1,7 @@
 "use strict";
 const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const { existsSync, mkdtempSync, rmSync } = require("node:fs");
 const fs = require("node:fs/promises");
 const { tmpdir } = require("node:os");
@@ -12,6 +13,112 @@ const {
 
 function run(command, args) {
   return execFileSync(command, args, { encoding: "utf8", timeout: 60000 });
+}
+
+async function packedDraftSmoke(installed, dir) {
+  const { openArchive } = require(join(installed, "lib", "archive.cjs"));
+  const { migrateJsonToSqlite } = require(
+    join(installed, "lib", "storage-sqlite.cjs"),
+  );
+  const { originalCapture } = require(join(installed, "lib", "originals.cjs"));
+  const { projectionChoices } = require(
+    join(installed, "lib", "local-derive-selection.cjs"),
+  );
+  const { verifiedProjections } = require(
+    join(installed, "lib", "local-derive-projection.cjs"),
+  );
+  const scope = { owner: "fixture", project: "fixture" };
+  const source = { harness: "dsh", instance: "packed", session: "draft" };
+  const id = "packed-draft-item";
+  const quote = "下一步检查公开合成例。";
+  await migrateJsonToSqlite({ dir });
+  const archive = await openArchive({ dir });
+  let row;
+  try {
+    const original = await originalCapture(dir)({
+      coordinate: 1,
+      bytes: Buffer.from(
+        JSON.stringify({
+          type: "user/message",
+          data: { role: "user", text: quote },
+        }) + "\n",
+      ),
+    });
+    await archive.importBatch({
+      scope,
+      source,
+      checkpoint: { position: 1 },
+      items: [
+        {
+          id,
+          kind: "message",
+          role: "user",
+          text: quote,
+          metadata: { original },
+        },
+      ],
+    });
+    row = await archive.getItem({ ...scope, source, id });
+  } finally {
+    archive.close?.();
+  }
+  assert.ok(row);
+  const [choice] = await verifiedProjections(
+    dir,
+    row,
+    projectionChoices(quote),
+  );
+  assert.equal(choice.text, quote);
+  const exact = {
+    source: "dsh/packed/draft",
+    item: id,
+    version: row.versionId,
+  };
+  const scopeKey = createHash("sha256")
+    .update(JSON.stringify([scope.owner, scope.project]))
+    .digest("hex");
+  const folder = join(dir, "local-derive");
+  await fs.mkdir(folder, { mode: 0o700 });
+  const latest = join(folder, `latest-${scopeKey}.json`);
+  const data = JSON.stringify({
+    runtime: "macos-offline-private",
+    scopeKey,
+    generatedAt: "2026-01-01T00:00:00.000Z",
+    draftFile: `draft-${"a".repeat(64)}.txt`,
+    inputProjections: [{ ...exact, ...choice.projection }],
+    candidates: [
+      {
+        kind: "todo",
+        status: "待核实",
+        claim: quote,
+        evidence: [{ ...exact, quote, originalSpan: choice.projection }],
+      },
+    ],
+  });
+  await fs.writeFile(latest, data, { mode: 0o600, flag: "wx" });
+  const cli = (command, ...args) =>
+    JSON.parse(
+      run(process.execPath, [
+        join(installed, "bin", "memory.cjs"),
+        command,
+        "--dir",
+        dir,
+        "--owner",
+        scope.owner,
+        "--project",
+        scope.project,
+        ...args,
+      ]),
+    );
+  const list = cli("draft-list");
+  assert.equal(list.status, "ready");
+  assert.equal(list.candidates.length, 1);
+  assert.ok(!Object.hasOwn(list.candidates[0], "claim"));
+  const detail = cli("draft-show", "--id", list.candidates[0].id);
+  assert.equal(detail.candidate.status, "待核实");
+  assert.equal(detail.candidate.evidence[0].quoteStatus, "verified-original");
+  assert.equal(detail.candidate.evidence[0].quote, quote);
+  assert.equal(await fs.readFile(latest, "utf8"), data);
 }
 
 async function main() {
@@ -86,6 +193,7 @@ async function main() {
     assert.ok(incremental.collector.itemsImported >= 1);
     const replay = watch();
     assert.equal(replay.collector.sessionsAttempted, 0);
+    await packedDraftSmoke(installed, collectorArchive);
     assert.equal(replay.collector.itemsImported, 0);
 
     const helper = await fs.lstat(join(installed, "lib", "nocache-hash.py"));
@@ -166,6 +274,7 @@ async function main() {
     await client.connect(transport, { timeout: 5000 });
     const listed = await client.listTools();
     assert.ok(listed.tools.some((tool) => tool.name === "memory_find"));
+    assert.ok(!listed.tools.some((tool) => /draft/.test(tool.name)));
     const result = await client.callTool({
       name: "memory_find",
       arguments: { keyword: "Release", limit: 5 },
@@ -179,7 +288,7 @@ async function main() {
     );
     assert.ok(!payload.text.includes("previewCitations"));
     console.log(
-      "Packed production dependencies passed both semantic modules and MCP find.",
+      "Packed production dependencies passed semantic modules, draft CLI, and MCP find.",
     );
   } finally {
     await client?.close();

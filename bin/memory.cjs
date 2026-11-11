@@ -33,6 +33,8 @@ Commands:
   annotate --target CITATION_JSON --kind note|correction|decision|change|todo --text TEXT [--id RETRY_ID] [--evidence CITATION_JSON]
   watch --manifest PRIVATE_JSON [--interval SECONDS] [--runs N]
   semantic-status
+  draft-list --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT
+  draft-show --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT --id CANDIDATE_ID
   daily [--manifest PRIVATE_JSON] [--local-draft]
   serve [--port PORT] [--serve-origin HTTPS_ORIGIN --serve-tailnet-user LOGIN]
   mcp [--allow-annotations]
@@ -98,6 +100,17 @@ async function main() {
   const [command, ...extra] = positionals;
   if (values.help || !command) return usage();
   if (extra.length) throw new Error('Unexpected positional argument.');
+  if (command === 'draft-list' || command === 'draft-show') {
+    const { readLocalDraft } = require('../lib/generated/local-draft-read.cjs');
+    const { openStorage } = require('../lib/storage.cjs');
+    const { openArchive } = require('../lib/archive.cjs');
+    const { projectionChoices } = require('../lib/local-derive-selection.cjs');
+    const { inspectDraftEvidence } = require('../lib/local-derive-projection.cjs');
+    const { result, exitCode } = await readLocalDraft(command, values, { openStorage, openArchive, projectionChoices, inspectDraftEvidence });
+    console.log(JSON.stringify(result, null, 2));
+    if (exitCode) process.exitCode = exitCode;
+    return;
+  }
   if (values.preview && command !== 'find') throw new Error('--preview is supported only by local find.');
   const { operations } = require('../lib/operations.cjs');
   const readCommands = ['find', 'timeline', 'current', 'evidence', 'coverage', 'verify-original', 'semantic-status'];

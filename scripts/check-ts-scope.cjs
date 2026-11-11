@@ -10,6 +10,7 @@ const typescript = [
   "src/ontology-projection.cts",
   "src/local-draft-state.cts",
   "src/local-admission.cts",
+  "src/local-draft-read.cts",
   "src/collector.cts",
   "src/semantic-queue.cts",
   "src/semantic-validation.cts",
@@ -51,6 +52,7 @@ const lintedJavaScript = [
   "tests/nocache-hash.test.cjs",
   "tests/local-run-integrity.test.cjs",
   "tests/local-derive-recovery.test.cjs",
+  "tests/local-draft-read.test.cjs",
 ];
 const files = execFileSync(
   "git",

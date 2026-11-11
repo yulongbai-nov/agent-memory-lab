@@ -51,11 +51,11 @@ node bin/memory.cjs serve --project work --port 8787
 
 `daily --project work --manifest <private-json>` 接受一个输入数组。每个对象可选择单文件的 `source,file,instance,session` 或目录的 `source,root,instance`，可加 `max-records`、`max-sessions` 和 `offset`。目录条目也可设置 `"recent":true`，优先扫描最近更新的会话。清单为空也可重建当前项目的轻量索引、已复核决定视图和待审队列。运行统计只输出计数，快照留在私有目录的 `derived/`。确定性整理阶段不调用模型，外部语义待授权。归档、批注和生效决定都未变化时跳过派生写入。已排期的决定过了生效点后，Wiki 在下一次整理刷新，即使没有新增写入。缺乏足够证据时技能候选列表为空。
 
-macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private-json> --project work` 生成用户 LaunchAgent。默认 03:00，按宿主机本地时区解释。Oslo 宿主对应 03:00 Europe/Oslo。将输出保存到私有 plist、用 `plutil -lint` 检查并用 `launchctl bootstrap gui/$(id -u) <plist>` 安装。私有试点的旧配置已有自然触发与快照记录，当前重载后的配置仍待观察首次自然触发。运行计数按当前加载实例计算。每轮每端至多处理三份会话，每份最多摄取 40 条记录。预算在最近会话、失败重试和历史回补之间分配，无需人工为后台任务指定 offset。试点清单与派生快照在默认私有根目录的 `acceptance-*/` 子目录。可用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.daily` 停止试点。
+macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private-json> --project work` 生成用户 LaunchAgent。默认 03:00，按宿主机本地时区解释。将输出保存到私有 plist、用 `plutil -lint` 检查并用 `launchctl bootstrap gui/$(id -u) <plist>` 安装。运行计数按当前加载实例计算。每轮每端至多处理三份会话，每份最多摄取 40 条记录。预算在最近会话、失败重试和历史回补之间分配，无需人工为后台任务指定 offset。可用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.daily` 停用每日任务。
 
 ## 本机持续摄取
 
-`bin/daily-launchd.cjs --interval-seconds 120` 可为只含 `"incremental":true` 目录条目的私有清单生成变更采集任务。私有试点已注册 `local.agent-memory-lab.collector`，每 120 秒唤起一次有界运行。每轮每端最多 2 份变化会话、每份最多 80 条，超大投影批次会标记阻断。以文件元数据跳过未变化来源，较早失败的来源轮转重试；长期回填活跃时本轮让行。每会话前按当前索引大小检查容量。任务只做本地追加与基础索引，模型调用为 0。退出码 0 表示进程正常退出，积压和阻塞仍需查看采集统计。03:00 的任务负责每日派生整理与有界回补。
+`bin/daily-launchd.cjs --interval-seconds 120` 可为只含 `"incremental":true` 目录条目的私有清单生成变更采集任务。生成的 `local.agent-memory-lab.collector` 每 120 秒唤起一次有界运行。每轮每端最多 2 份变化会话、每份最多 80 条，超大投影批次会标记阻断。以文件元数据跳过未变化来源，较早失败的来源轮转重试；长期回填活跃时本轮让行。每会话前按当前索引大小检查容量。任务只做本地追加与基础索引，模型调用为 0。退出码 0 表示进程正常退出，积压和阻塞仍需查看采集统计。03:00 的任务负责每日派生整理与有界回补。
 
 用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.collector` 停用持续摄取。恢复时用 `launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/local.agent-memory-lab.collector.plist"`。两条命令只操作持续摄取。合成试点验证了定时新增、停用和重新启用。
 
@@ -79,9 +79,16 @@ node bin/local-derive.cjs --dir <private-dir> --owner local --project <project>
 
 推理使用命令行，不监听网络。macOS 沙盒拒绝网络、写文件和用户数据目录读取，在这些目录中仅允许读取固定模型和本次私有临时输入。系统运行库仍可读。每次启动前验证禁网和合成文件读取拒绝，失败则停止。两条 CPU 线程，上下文 768 token，输出上限 384 token，最长 60 秒。内存压力与进程常驻内存受监控。提示和临时文件存放在经 Git 工作树校验的私有 `local-derive/` 子目录，目录 0700、文件 0600。若该子目录自身已初始化为 Git 仓库，入口也会拒绝运行。
 
-命令仅打印统计。成功候选另存为档案目录下 `local-derive/latest-*.json`，其中的 `draftFile` 指向同目录的 `draft-*.txt`。草稿供本机文件管理器或本地编辑器人工审阅，状态固定为「待核实」，与已确认决定的 Wiki 分开。文本和标记字符会转义，引用以来源、条目、版本和原句显示。网页和普通 MCP 均无候选读取入口。缓存按作用域、输入版本、模型文件 SHA-256 和提示版本区分。校验失败保留待处理状态，无变化时复用成功缓存。
+构建命令只打印统计。成功候选可在本机用显式范围读取：
 
-日常确定性整理仍先运行。可为 `daily` 或 `bin/daily-launchd.cjs` 显式添加 `--local-draft`，每次最多处理一个本地批次。代码默认关闭。当前私有试点已在 03:00 的 LaunchAgent 中显式启用，保留原 plist 的私有备份。去掉此参数并重新加载任务即可停用草稿阶段。私有 `derived/local-draft-*.json` 分别记录本地与外部模型调用数、校验状态和安全计数。外部私有语义处理继续标记为 `requires-user-consent`，召回基准保持 `gpt-6-luna` low。
+```sh
+node bin/memory.cjs draft-list --dir <private-dir> --owner local --project <project>
+node bin/memory.cjs draft-show --dir <private-dir> --owner local --project <project> --id <candidate-id>
+```
+
+列表返回当前快照和候选编号。详情返回选定候选的「待核实」状态、精确引用、来源版本和原件可用性。引文来自脱敏归档预览，详情会在本机复核精确原件跨度。若快照已更新，重新列表再选择。「待核实」是生成时的草稿状态。当前正式决定走 `current` 或 `timeline`，提交人工复核沿用 `annotate`。[只读草稿契约](local-draft-read.md)
+
+日常确定性整理仍先运行。可为 `daily` 或 `bin/daily-launchd.cjs` 显式添加 `--local-draft`，每次最多处理一个本地批次。代码默认关闭。为 LaunchAgent 启用时可保留原配置备份。去掉此参数并重新加载任务即可停用草稿阶段。`derived/local-draft-*.json` 分别记录本地与外部模型调用数、校验状态和安全计数。外部私有语义处理继续标记为 `requires-user-consent`，召回基准保持 `gpt-6-luna` low。
 
 ## 私有 CouchDB 同步
 
@@ -91,4 +98,4 @@ node bin/local-derive.cjs --dir <private-dir> --owner local --project <project>
 - `archive_annotator` 用 `sync --sync-mode annotations`。
 - 采集器独用 `archive_writer` 与 `sync --sync-mode all`。
 
-`sync` 默认为 pull。各端本地 checkpoint 独立，归档版本和批注通过共享库交换。角色限制在实际 CouchDB 中验过。能以同一 OS 用户直接访问私有文件的进程仍具备该用户的文件权限。部署时应使用限制文件访问的宿主或独立服务账户，对普通 Agent 只暴露范围固定的查询和批注接口。不要向普通 Agent 分发采集器凭据。macOS 可将 MCP 命令改为 `bin/readonly-mcp-macos.sh --dir <private-dir> --project work`。该进程实际通过过查询和直接写入拒绝测试，提供只读工具并禁止该进程写文件及联网。它依赖宿主 `sandbox-exec`。批注通过网页或明确授权的写入 MCP 追加。已在本机配置可复用的私有 CouchDB 实例、持久卷和独立角色，验证了只在回环地址监听与重启持久化。交付时实例停止，按本地交付记录中的脚本启动。档案未上传至该实例；需要 Mac 离线时仍可访问的常在线节点，须另行选择受信主机。
+`sync` 默认为 pull。各端本地 checkpoint 独立，归档版本和批注通过共享库交换。角色限制在实际 CouchDB 中验过。能以同一 OS 用户直接访问私有文件的进程仍具备该用户的文件权限。部署时应使用限制文件访问的宿主或独立服务账户，对普通 Agent 只暴露范围固定的查询和批注接口。不要向普通 Agent 分发采集器凭据。macOS 可将 MCP 命令改为 `bin/readonly-mcp-macos.sh --dir <private-dir> --project work`。该进程实际通过过查询和直接写入拒绝测试，提供只读工具并禁止该进程写文件及联网。它依赖宿主 `sandbox-exec`。批注通过网页或明确授权的写入 MCP 追加。合成实验验证了回环服务、持久卷和独立角色。需要 Mac 离线时仍可访问的常在线节点时，另行选择受信主机。

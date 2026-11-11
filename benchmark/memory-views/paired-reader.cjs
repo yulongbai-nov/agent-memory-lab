@@ -21,6 +21,7 @@ const {
   createBudgetProxy,
   LIMITS,
 } = require("../harness-e2e/openai-proxy.cjs");
+const { safeMetadata } = require("../harness-e2e/response-metadata.cjs");
 const { score } = require("./paired-score.cjs");
 const hash = (s) => createHash("sha256").update(s).digest("hex");
 const limits = { topK: 3, contextBytes: 1900 };
@@ -234,12 +235,17 @@ async function preflight(cases) {
     await new Promise((resolve) => proxy.close(resolve));
   }
 }
-function protocolAnswer(out) {
-  const text = out.output
-    ?.flatMap((item) => item.content ?? [])
-    .find((item) => item.type === "output_text")?.text;
-  if (typeof text !== "string") throw Error("missing output text");
-  return JSON.parse(text);
+function outputText(out) {
+  if (!Array.isArray(out.output)) return null;
+  for (const item of out.output) {
+    if (!item || !Array.isArray(item.content)) continue;
+    const text = item.content.find(
+      (value) =>
+        value?.type === "output_text" && typeof value.text === "string",
+    )?.text;
+    if (typeof text === "string") return text;
+  }
+  return null;
 }
 function cleanUsage(u) {
   const number = (x) => (Number.isSafeInteger(x) && x >= 0 ? x : null);
@@ -364,21 +370,42 @@ async function live(cases, frozen, resultFile, options = {}) {
           signal: AbortSignal.timeout(Math.min(75000, budget)),
         });
         if (!response.ok) {
-          await response.body?.cancel();
+          let metadata = null;
+          try {
+            const payload = await response.json(),
+              p = payload?.provider;
+            metadata = safeMetadata({
+              status: p?.providerStatus,
+              incomplete_details: { reason: p?.incompleteReason },
+              error: { code: p?.errorCode },
+              usage: p?.usage,
+            });
+          } catch {
+            /* no safe provider metadata received */
+          }
           results[i] = {
             ...results[i],
             status: `http-${response.status}`,
             elapsedMs: Date.now() - begin,
+            providerStatus: metadata?.providerStatus ?? null,
+            incompleteReason: metadata?.incompleteReason ?? null,
+            errorCode: metadata?.errorCode ?? null,
+            usage: cleanUsage(metadata?.usage),
           };
         } else {
           const out = await response.json();
-          const visibleText =
-            out.output
-              ?.flatMap((item) => item.content ?? [])
-              .find((item) => item.type === "output_text")?.text ?? null;
+          const metadata = safeMetadata(out);
+          results[i] = {
+            ...results[i],
+            providerStatus: metadata.providerStatus,
+            incompleteReason: metadata.incompleteReason,
+            errorCode: metadata.errorCode,
+            usage: cleanUsage(metadata.usage),
+          };
+          const visibleText = outputText(out);
           let answer = null;
           try {
-            answer = protocolAnswer(out);
+            answer = JSON.parse(visibleText);
           } catch {
             /* preserve visible invalid response for regrading */
           }
@@ -392,11 +419,21 @@ async function live(cases, frozen, resultFile, options = {}) {
             ...results[i],
             status,
             elapsedMs: Date.now() - begin,
-            model: out.model ?? null,
-            reportedEffort: out.reasoning?.effort ?? null,
+            model: /^gpt-6-luna(?:-\d{4}-\d{2}-\d{2})?$/.test(out.model || "")
+              ? out.model
+              : null,
+            reportedEffort:
+              out.reasoning?.effort == null
+                ? null
+                : out.reasoning.effort === "low"
+                  ? "low"
+                  : "other",
+            providerStatus: metadata.providerStatus,
+            incompleteReason: metadata.incompleteReason,
+            errorCode: metadata.errorCode,
             visibleText,
             answer,
-            usage: cleanUsage(out.usage),
+            usage: cleanUsage(metadata.usage),
             assessment:
               status === "completed"
                 ? score(sample, answer, require("./paired-oracle.cjs"))

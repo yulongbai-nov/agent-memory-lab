@@ -206,3 +206,104 @@ test("failed proxy precheck leaves all synthetic cases explicitly unsent", async
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+test("records received status, safe reason and usage even without a valid completed answer", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paired-status-test-"));
+  try {
+    const cases = await construct(),
+      output = path.join(dir, "result.json");
+    let sent = 0;
+    const fetchImpl = async (url) => {
+      if (url.endsWith("/stats"))
+        return Response.json({
+          requests: sent,
+          requestedModel: "gpt-6-luna",
+          requestedEffort: "low",
+        });
+      sent++;
+      if (sent === 1)
+        return Response.json({
+          status: "incomplete",
+          model: "gpt-6-luna",
+          incomplete_details: { reason: "max_output_tokens" },
+          usage: { input_tokens: 693, output_tokens: 512, total_tokens: 1205 },
+          output: [{ content: [{ type: "output_text", text: "{invalid" }] }],
+        });
+      if (sent === 2)
+        return Response.json({
+          status: "failed",
+          model: "gpt-6-luna",
+          error: { code: "server_error", message: "do not save" },
+          usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+        });
+      if (sent === 3)
+        return Response.json(
+          {
+            error: "provider failed",
+            provider: {
+              providerStatus: "failed",
+              errorCode: "server_error",
+              usage: { input_tokens: 5, total_tokens: 5 },
+            },
+          },
+          { status: 502 },
+        );
+      if (sent === 4)
+        return Response.json({
+          status: "incomplete",
+          model: "gpt-6-luna",
+          incomplete_details: { reason: "max_output_tokens" },
+          usage: { input_tokens: 4, output_tokens: 3, total_tokens: 7 },
+          output: { malformed: true },
+        });
+      if (sent === 5)
+        return Response.json({
+          status: "failed",
+          model: "gpt-6-luna",
+          error: { code: "server_error" },
+          usage: { input_tokens: 5, total_tokens: 5 },
+          output: [null],
+        });
+      return Response.json({
+        status: "completed",
+        model: "gpt-6-luna",
+        output: [
+          {
+            content: [
+              {
+                type: "output_text",
+                text: '{"status":"unknown","facts":[{"value":null,"citations":[]},{"value":null,"citations":[]}]}',
+              },
+            ],
+          },
+        ],
+      });
+    };
+    const result = await live(cases, [], output, {
+      token: "synthetic",
+      base: "http://127.0.0.1:8080",
+      enabled: true,
+      fetchImpl,
+    });
+    assert.equal(result.results[0].providerStatus, "incomplete");
+    assert.equal(result.results[0].incompleteReason, "max_output_tokens");
+    assert.equal(result.results[0].usage.total, 1205);
+    assert.equal(result.results[0].answer, null);
+    assert.equal(result.results[1].providerStatus, "failed");
+    assert.equal(result.results[1].errorCode, "server_error");
+    assert.equal(result.results[1].usage.total, 3);
+    assert.equal(result.results[2].providerStatus, "failed");
+    assert.equal(result.results[2].usage.total, 5);
+    assert.equal(result.results[3].providerStatus, "incomplete");
+    assert.equal(result.results[3].usage.total, 7);
+    assert.equal(result.results[4].providerStatus, "failed");
+    assert.equal(result.results[4].usage.total, 5);
+    assert.equal(result.results[5].usage.total, null);
+    assert.ok(!JSON.stringify(result).includes("do not save"));
+    assert.equal(
+      JSON.parse(await fs.readFile(output, "utf8")).results.length,
+      8,
+    );
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});

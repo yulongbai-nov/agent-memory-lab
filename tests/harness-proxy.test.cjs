@@ -77,9 +77,73 @@ test('successful HTTP alone does not establish a completed model turn',async t=>
  const stats=await fetch(root+'/stats',{headers:{authorization}}).then(response=>response.json());
  assert.equal(stats.providerOk,1);
  assert.equal(stats.providerFailed,2);
- assert.equal(stats.missingTerminal,1);
+ assert.equal(stats.missingTerminal,0);
+ assert.equal(stats.terminalIncomplete,1);
  assert.equal(stats.unexpectedModel,1);
  assert.deepEqual(stats.usage.input_tokens,{reported:0,tokens:null});
+});
+
+test('accounts all received terminal usage independently of success, once per request',async t=>{
+ const usage=(n)=>({input_tokens:n,output_tokens:1,total_tokens:n+1});
+ const terminal=(status,n,extra={})=>({status,model:'gpt-6-luna',usage:usage(n),...extra});
+ const duplicate='data: '+JSON.stringify({type:'response.completed',response:terminal('completed',6)})+'\n\n'+
+  'data: '+JSON.stringify({type:'response.completed',response:terminal('completed',6)})+'\n\n';
+ const replies=[
+  Response.json(terminal('completed',1)),
+  Response.json(terminal('incomplete',2,{incomplete_details:{reason:'max_output_tokens'}})),
+  Response.json(terminal('failed',3,{error:{code:'server_error',message:'not to retain'}})),
+  Response.json(terminal('completed',4,{model:'wrong-model'})),
+  Response.json({status:'completed',model:'gpt-6-luna'}),
+  Response.json({error:{code:'invalid_request_error',message:'not to retain'},usage:usage(5)},{status:400}),
+  new Response(duplicate,{headers:{'content-type':'text/event-stream'}}),
+ ];
+ const server=createBudgetProxy({apiKey:'synthetic-key',gateToken:token,fetchImpl:async()=>replies.shift()});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(r=>server.close(r)));
+ const root='http://127.0.0.1:'+server.address().port, authorization='Bearer '+token;
+ for(let i=0;i<7;i++){
+  const r=await fetch(root+'/v1/responses',{method:'POST',headers:{authorization,'content-type':'application/json'},body:JSON.stringify({...body,stream:i===6})});
+  if(i===5){assert.equal(r.status,502);const x=await r.json();assert.equal(x.provider.errorCode,'invalid_request_error');assert.equal(x.provider.usage.total_tokens,6);assert.ok(!JSON.stringify(x).includes('not to retain'));}
+  else {assert.equal(r.status,200);await r.text();}
+ }
+ const stats=await fetch(root+'/stats',{headers:{authorization}}).then(r=>r.json());
+ assert.equal(stats.requests,7);assert.equal(stats.providerOk,3);assert.equal(stats.providerFailed,4);
+ assert.equal(stats.terminalCompleted,4);assert.equal(stats.terminalIncomplete,1);assert.equal(stats.terminalFailed,1);
+ assert.deepEqual(stats.usage.input_tokens,{reported:6,tokens:21});
+ assert.deepEqual(stats.usage.output_tokens,{reported:6,tokens:6});
+ assert.deepEqual(stats.usage.total_tokens,{reported:6,tokens:27});
+});
+
+test('streaming incomplete and failed terminal events account once including delayed usage',async t=>{
+ const events=[
+  [{type:'response.incomplete',response:{status:'incomplete',model:'gpt-6-luna'}},
+   {type:'response.incomplete',response:{status:'incomplete',model:'gpt-6-luna',usage:{input_tokens:3,output_tokens:2,total_tokens:5}}}],
+  [{type:'response.failed',response:{status:'failed',model:'gpt-6-luna',usage:{input_tokens:4,output_tokens:1,total_tokens:5}}},
+   {type:'response.failed',response:{status:'failed',model:'gpt-6-luna',usage:{input_tokens:4,output_tokens:1,total_tokens:5}}}],
+  [{type:'response.in_progress',response:{status:'in_progress',usage:{input_tokens:3,output_tokens:1,total_tokens:4}}},
+   {type:'response.completed',response:{status:'completed',model:'gpt-6-luna',usage:{input_tokens:3,output_tokens:4,total_tokens:7}}}],
+ ];
+ const server=createBudgetProxy({apiKey:'synthetic-key',gateToken:token,fetchImpl:async()=>new Response(events.shift().map(e=>'data: '+JSON.stringify(e)+'\n\n').join(''),{headers:{'content-type':'text/event-stream'}})});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(r=>server.close(r)));
+ const root='http://127.0.0.1:'+server.address().port,authorization='Bearer '+token;
+ for(let i=0;i<3;i++){const r=await fetch(root+'/v1/responses',{method:'POST',headers:{authorization,'content-type':'application/json'},body:JSON.stringify({...body,stream:true})});await r.text();}
+ const stats=await fetch(root+'/stats',{headers:{authorization}}).then(r=>r.json());
+ assert.equal(stats.terminalIncomplete,1);assert.equal(stats.terminalFailed,1);assert.equal(stats.providerFailed,2);assert.equal(stats.providerOk,1);
+ assert.deepEqual(stats.usage.total_tokens,{reported:3,tokens:17});
+});
+
+test('SSE terminal event type must match status and late nonterminal usage cannot replace final usage',async t=>{
+ const streams=[
+  [{type:'response.in_progress',response:{status:'completed',model:'gpt-6-luna',usage:{input_tokens:2,total_tokens:2}}}],
+  [{type:'response.completed',response:{status:'completed',model:'gpt-6-luna',usage:{input_tokens:10,total_tokens:10}}},
+   {type:'response.in_progress',response:{status:'in_progress',usage:{input_tokens:3,total_tokens:3}}}],
+ ];
+ const server=createBudgetProxy({apiKey:'synthetic-key',gateToken:token,fetchImpl:async()=>new Response(streams.shift().map(e=>'data: '+JSON.stringify(e)+'\n\n').join(''),{headers:{'content-type':'text/event-stream'}})});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(r=>server.close(r)));
+ const root='http://127.0.0.1:'+server.address().port,authorization='Bearer '+token;
+ for(let i=0;i<2;i++){const r=await fetch(root+'/v1/responses',{method:'POST',headers:{authorization,'content-type':'application/json'},body:JSON.stringify({...body,stream:true})});await r.text();}
+ const stats=await fetch(root+'/stats',{headers:{authorization}}).then(r=>r.json());
+ assert.equal(stats.terminalCompleted,1);assert.equal(stats.missingTerminal,1);assert.equal(stats.providerOk,1);assert.equal(stats.providerFailed,1);
+ assert.deepEqual(stats.usage.total_tokens,{reported:2,tokens:12});
 });
 
 test('preserves bounded tool choices and the Responses function-call wire shape',async t=>{

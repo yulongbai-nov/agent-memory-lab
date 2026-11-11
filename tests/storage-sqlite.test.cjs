@@ -71,3 +71,17 @@ test('review-only and compact summaries preserve review and semantic selection',
  assert.equal(summaries.find(s=>s.pendingReview).previewBytes,Buffer.byteLength('æ🙂'));
  assert.equal(db.listVersionSummaries({owner:'other',project:'p'}).length,0);
 });
+
+test('local draft pages use a fixed insertion fence without returning other scope data',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'draft-page-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const a=await openArchive({dir}), scope={owner:'o',project:'p'},other={owner:'other',project:'p'},source={harness:'dsh',instance:'i',session:'s'};
+ await a.importBatch({scope,source,checkpoint:{position:1},items:[{id:'old',kind:'message',time:'2030-01-01',text:'synthetic first'}]});
+ await a.importBatch({scope:other,source,checkpoint:{position:1},items:[{id:'outside',kind:'message',text:'outside scope'}]});
+ await a.importBatch({scope,source,checkpoint:{previous:1,position:2},items:[{id:'late',kind:'message',time:'2000-01-01',text:'synthetic late'}]});
+ await migrateJsonToSqlite({dir});const ro=await openArchive({dir,readOnly:true});const fence=await ro.localDraftFence(scope);assert.equal(fence,3);
+ const first=await ro.localDraftPage(scope,0,fence,2);assert.equal(first.length,2);assert.equal(first[0].record.item.id,'old');assert.equal(first[0].record.item.text,undefined);assert.equal(first[1].record,null);assert(!JSON.stringify(first).includes('outside scope'));
+ const second=await ro.localDraftPage(scope,first.at(-1).seq,fence,2);assert.equal(second[0].record.item.id,'late');
+ const writer=await openArchive({dir});await writer.importBatch({scope,source,checkpoint:{previous:2,position:3},items:[{id:'new',kind:'message',text:'new'}]});writer.close?.();
+ assert.deepEqual(await ro.localDraftPage(scope,second.at(-1).seq,fence,2),[]);const nextFence=await ro.localDraftFence(scope);assert.equal((await ro.localDraftPage(scope,fence,nextFence,2))[0].record.item.id,'new');
+ await assert.rejects(ro.localDraftPage(scope,0,nextFence,101),/Invalid local draft page/);ro.close?.();
+});

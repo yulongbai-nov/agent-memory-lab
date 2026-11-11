@@ -209,6 +209,21 @@ async function main() {
       join(installed, "lib", "adapters", "chatgpt-snapshot.cjs"),
     );
     const ontology = require(join(installed, "lib", "ontology-projection.cjs"));
+    const candidateV2 = require(
+      join(installed, "lib", "candidate-contract-v2.cjs"),
+    );
+    assert.equal(
+      existsSync(join(installed, "lib", "candidate-contract-v2.d.cts")),
+      true,
+    );
+    assert.equal(candidateV2.PROTOCOL, "candidate-v2");
+    assert.deepEqual(
+      candidateV2.validateVersionedCandidates(
+        { protocol: "candidate-v2", candidates: [] },
+        [],
+      ),
+      [],
+    );
     assert.equal(typeof snapshot.readChatgptSnapshot, "function");
     assert.equal(typeof ontology.rebuildProjection, "function");
     const reference = { source: "fixture", item: "item", version: "revision" };

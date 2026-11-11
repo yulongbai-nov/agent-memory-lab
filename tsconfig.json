@@ -19,6 +19,7 @@
     "src/semantic-validation.cts",
     "src/candidate-contract-v2.cts",
     "lib/candidate-contract-v2.d.cts",
+    "src/find-preview.cts",
     "src/semantic-queue.cts",
     "src/local-draft-state.cts",
     "src/local-admission.cts",

@@ -16,6 +16,7 @@ const typescript = [
   "src/candidate-contract-v2.cts",
   "lib/candidate-contract-v2.d.cts",
   "tests/candidate-contract-v2.types.cts",
+  "src/find-preview.cts",
 ];
 const lintedJavaScript = [
   "benchmark/harness-e2e/codex/find-contract.cjs",
@@ -33,6 +34,8 @@ const lintedJavaScript = [
   "tests/proxy-staging.test.cjs",
   "lib/candidate-contract-v2.cjs",
   "tests/candidate-contract-v2.test.cjs",
+  "lib/find-preview.cjs",
+  "tests/find-preview.test.cjs",
   "tests/memory-evidence-bundle-holdout.test.cjs",
   "eslint.config.mjs",
   "lib/adapters/chatgpt-snapshot.cjs",

@@ -16,9 +16,20 @@ test('daily local draft is opt-in, bounded, and failure leaves deterministic sna
  const files=await fs.readdir(path.join(dir,'derived')); const saved=await fs.readFile(path.join(dir,'derived',files.find(x=>x.endsWith('.json') && !x.startsWith('local-draft-'))),'utf8'); assert.ok(!saved.includes('SECRET CANDIDATE')); const statusFile=path.join(dir,'derived',files.find(x=>x.startsWith('local-draft-'))); const status=JSON.parse(await fs.readFile(statusFile,'utf8')); assert.equal(status.status,'validated'); assert.equal(status.localDraftCandidates,2); assert.equal(status.localDraftCacheHit,false); assert.equal(status.localDraftStats.wallSeconds,1.5); assert.ok(!JSON.stringify(status).includes('SECRET')); assert.equal((await fs.stat(statusFile)).mode & 0o077,0);
  const failed=await dailyReview(op,[],async()=>({itemsImported:0}),{now,localDraft:true,localDraftRunner:async()=>{throw Error('private failure');}});
  assert.equal(failed.localDraftStatus,'retryable');assert.equal(failed.localModelCalls,0);assert.equal(failed.modelCalls,0);assert.ok(!JSON.stringify(failed).includes('private failure'));assert.equal(failed.snapshotChanged,false);
+ assert.equal(failed.localDraftReason,'LOCAL_DRAFT_ENTRY_FAILED');
+ const capacity=await dailyReview(op,[],async()=>({itemsImported:0}),{
+   now,localDraft:true,localDraftRunner:async()=>({status:'retryable',reason:'MEMORY_ADMISSION',modelCalls:0})
+ });
+ assert.equal(capacity.localDraftReason,'MEMORY_ADMISSION');
+ assert.equal(JSON.parse(await fs.readFile(statusFile,'utf8')).localDraftReason,'MEMORY_ADMISSION');
+ const unknown=await dailyReview(op,[],async()=>({itemsImported:0}),{
+   now,localDraft:true,localDraftRunner:async()=>({status:'retryable',reason:'PRIVATE_FAILURE_DETAILS',modelCalls:0})
+ });
+ assert.equal(Object.hasOwn(unknown,'localDraftReason'),false);
+ assert.ok(!(await fs.readFile(statusFile,'utf8')).includes('PRIVATE_FAILURE_DETAILS'));
  await fs.rm(statusFile); await fs.mkdir(statusFile);
  const saveFailure=await dailyReview(op,[],async()=>({itemsImported:0}),{now,localDraft:true,localDraftRunner:runner});
- assert.equal(saveFailure.localDraftStatus,'retryable'); assert.equal(saveFailure.localModelCalls,1); assert.equal(saveFailure.snapshotChanged,false);
+ assert.equal(saveFailure.localDraftStatus,'retryable'); assert.equal(saveFailure.localDraftReason,'LOCAL_DRAFT_STATUS_WRITE_FAILED'); assert.equal(saveFailure.localModelCalls,1); assert.equal(saveFailure.snapshotChanged,false);
 });
 test('launch agent enables local draft only when requested for daily',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'daily-launch-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));

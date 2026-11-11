@@ -25,6 +25,8 @@ export default defineConfig([
       "benchmark/harness-e2e/codex/read-contract.cjs",
       "benchmark/harness-e2e/dsh/bounded-contract.cjs",
       "benchmark/memory-views/run.cjs",
+      "benchmark/memory-views/evidence-bundle.cjs",
+      "tests/memory-evidence-bundle-holdout.test.cjs",
       "eslint.config.mjs",
       "lib/adapters/chatgpt-snapshot.cjs",
       "lib/bounded-memory-relay.cjs",

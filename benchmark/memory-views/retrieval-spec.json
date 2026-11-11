@@ -1,7 +1,12 @@
 [
   {
     "id": "temporal-slot",
-    "text": "Looking back from 13:00 UTC, what was the Harbor rehearsal slot at 11:59 and at 12:30 UTC? Return the two weekdays in order."
+    "text": "Looking back from 13:00 UTC, what was the Harbor rehearsal slot at 11:59 and at 12:30 UTC? Return the two weekdays in order.",
+    "request": {
+      "kind": "temporal-comparison",
+      "validTimes": ["2026-01-01T11:59:00Z", "2026-01-01T12:30:00Z"],
+      "retrospective": true
+    }
   },
   {
     "id": "revision-kind",
@@ -13,7 +18,12 @@
   },
   {
     "id": "dependency",
-    "text": "Using knowledge through 13:00 UTC, at the valid time 12:30 UTC, which open action depended on the Harbor rehearsal slot, and which weekday was that slot?"
+    "text": "Using knowledge through 13:00 UTC, at the valid time 12:30 UTC, which open action depended on the Harbor rehearsal slot, and which weekday was that slot?",
+    "request": {
+      "kind": "open-dependency",
+      "asOf": "2026-01-01T12:30:00Z",
+      "knowledgeCutoff": "2026-01-01T13:00:00Z"
+    }
   },
   {
     "id": "historical",

@@ -4,6 +4,7 @@ const { execFileSync } = require("node:child_process");
 const legacyJavaScript = require("./legacy-js-scope.json");
 
 const typescript = [
+  "src/collector.cts",
   "src/bounded-memory-find.cts",
   "src/bounded-memory-read.cts",
   "src/chatgpt-snapshot.cts",
@@ -19,6 +20,8 @@ const lintedJavaScript = [
   "eslint.config.mjs",
   "lib/adapters/chatgpt-snapshot.cjs",
   "lib/bounded-memory-relay.cjs",
+  "lib/collector.cjs",
+  "tests/collector.test.cjs",
   "lib/codex-discovery.cjs",
   "lib/ontology-projection.cjs",
   "scripts/check-ts-scope.cjs",

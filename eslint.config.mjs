@@ -6,6 +6,7 @@ export default defineConfig([
   { ignores: ["node_modules/**", "lib/generated/**"] },
   {
     files: [
+      "src/collector.cts",
       "src/bounded-memory-find.cts",
       "src/bounded-memory-read.cts",
       "src/chatgpt-snapshot.cts",
@@ -26,6 +27,8 @@ export default defineConfig([
       "eslint.config.mjs",
       "lib/adapters/chatgpt-snapshot.cjs",
       "lib/bounded-memory-relay.cjs",
+      "lib/collector.cjs",
+      "tests/collector.test.cjs",
       "lib/codex-discovery.cjs",
       "lib/ontology-projection.cjs",
       "scripts/check-ts-scope.cjs",

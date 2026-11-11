@@ -34,6 +34,7 @@ export default defineConfig([
       "benchmark/memory-views/paired-score.cjs",
       "benchmark/harness-e2e/response-metadata.cjs",
       "tests/paired-reader.test.cjs",
+      "tests/proxy-staging.test.cjs",
       "tests/memory-evidence-bundle-holdout.test.cjs",
       "eslint.config.mjs",
       "lib/adapters/chatgpt-snapshot.cjs",

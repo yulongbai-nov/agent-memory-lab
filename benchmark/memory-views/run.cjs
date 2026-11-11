@@ -572,20 +572,28 @@ function packEvidence(sources, records) {
       })),
   };
 }
-function selectEvidence(question, rows) {
+function selectEvidence(
+  question,
+  rows,
+  {
+    scope: selectedScope = scope,
+    topic: selectedTopic = topic,
+    limits = retrievalBudget,
+  } = {},
+) {
   const words = terms(question.text);
-  for (const word of terms(topic)) words.delete(word);
+  for (const word of terms(selectedTopic)) words.delete(word);
   const sources = rows.filter(
     (row) =>
       row.type === "source" &&
-      row.scope?.owner === scope.owner &&
-      row.scope?.project === scope.project,
+      row.scope?.owner === selectedScope.owner &&
+      row.scope?.project === selectedScope.project,
   );
   const records = rows.filter(
     (row) =>
       row.type !== "source" &&
-      row.scope?.owner === scope.owner &&
-      row.scope?.project === scope.project,
+      row.scope?.owner === selectedScope.owner &&
+      row.scope?.project === selectedScope.project,
   );
   const rank = (source) => {
     const attached = records.filter((row) => citedBy(row).includes(source.ref));
@@ -611,10 +619,9 @@ function selectEvidence(question, rows) {
   const selected = [];
   const pack = (sources) => packEvidence(sources, records);
   for (const { source } of ranked) {
-    if (selected.length === retrievalBudget.topK) break;
+    if (selected.length === limits.topK) break;
     if (
-      bytes(JSON.stringify(pack([...selected, source]))) <=
-      retrievalBudget.contextBytes
+      bytes(JSON.stringify(pack([...selected, source]))) <= limits.contextBytes
     )
       selected.push(source);
   }
@@ -720,11 +727,23 @@ async function runRetrievalCheck(fixture, views) {
   };
   const staged = [];
   const prompts = require("./retrieval-spec.json");
+  const retrievalArms = [...arms, "structured-bundle"];
   for (const question of prompts) {
-    for (const arm of arms) {
+    for (const arm of retrievalArms) {
       const start = performance.now();
-      const rows = await views[arm]();
-      const context = selectEvidence(question, rows);
+      const rows =
+        await views[arm === "structured-bundle" ? "structured" : arm]();
+      const bundle =
+        arm === "structured-bundle"
+          ? require("./evidence-bundle.cjs").selectEvidenceBundle({
+              scope,
+              topic,
+              request: question.request,
+              rows,
+              limits: retrievalBudget,
+            })
+          : null;
+      const context = bundle ? bundle.context : selectEvidence(question, rows);
       const retrievalMs = round(performance.now() - start);
       const selectedRefs = context.sources.map((row) => row.ref);
       const referenced = [
@@ -750,6 +769,7 @@ async function runRetrievalCheck(fixture, views) {
         arm,
         rows,
         context,
+        bundleStatus: bundle?.status ?? null,
         selectedRefs,
         referenced,
         audit,
@@ -769,6 +789,7 @@ async function runRetrievalCheck(fixture, views) {
       arm,
       rows,
       context,
+      bundleStatus,
       selectedRefs,
       referenced,
       audit,
@@ -808,6 +829,7 @@ async function runRetrievalCheck(fixture, views) {
       return {
         question,
         arm,
+        bundleStatus,
         candidateVersions: rows.filter((row) => row.type === "source").length,
         selectedRefs,
         candidateRefs: rows
@@ -824,6 +846,15 @@ async function runRetrievalCheck(fixture, views) {
       };
     },
   );
+  for (const question of prompts.filter((item) => item.request)) {
+    const result = results.find(
+      (row) => row.question === question.id && row.arm === "structured-bundle",
+    );
+    assert.ok(
+      result && result.bundleStatus === "complete" && result.fullSupport,
+      `Typed bundle did not supply evidence: ${question.id}`,
+    );
+  }
   // Confirm the agreed budget is feasible without feeding oracle information into retrieval.
   const allRows = [...(await views.file())].filter(
     (row) => row.scope?.project === scope.project,
@@ -1165,7 +1196,7 @@ async function checkRetrieval() {
     assert.equal(trial.crossScopeCollisionRejected, true);
     assert.equal(
       trial.results.length,
-      require("./retrieval-spec.json").length * arms.length,
+      require("./retrieval-spec.json").length * (arms.length + 1),
     );
     for (const row of trial.results) {
       const label = `${row.arm}/${row.question}`;
@@ -1176,7 +1207,9 @@ async function checkRetrieval() {
         `Unresolved revision in ${label}`,
       );
       assert.ok(
-        row.selectedRefs.length > 0 &&
+        (row.selectedRefs.length > 0 ||
+          row.bundleStatus === "unknown" ||
+          row.bundleStatus === "insufficient") &&
           row.selectedRefs.length <= trial.budget.topK,
         `Invalid topK in ${label}`,
       );
@@ -1225,7 +1258,10 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}
+module.exports = { selectEvidence };

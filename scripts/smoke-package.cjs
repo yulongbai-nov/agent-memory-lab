@@ -233,6 +233,31 @@ async function main() {
     );
     const archive = join(work, "archive");
     run(process.execPath, [join(installed, "bin", "seed-demo.cjs"), archive]);
+    const preview = JSON.parse(
+      run(process.execPath, [
+        join(installed, "bin", "memory.cjs"),
+        "find",
+        "--keyword",
+        "release",
+        "--preview",
+        "--dir",
+        archive,
+        "--project",
+        "demo",
+      ]),
+    );
+    assert.ok(
+      preview.topics.some(
+        (row) =>
+          row.preview?.label === "归档消息" &&
+          row.preview.text.toLowerCase().includes("release"),
+      ),
+    );
+    assert.ok(
+      preview.topics.every(
+        (row) => !row.preview || Buffer.byteLength(row.preview.text) <= 240,
+      ),
+    );
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [
@@ -261,6 +286,7 @@ async function main() {
         (row) => row.topic === "Release checklist",
       ),
     );
+    assert.ok(!payload.text.includes("previewCitations"));
     console.log(
       "Packed production dependencies passed semantic modules, draft CLI, and MCP find.",
     );

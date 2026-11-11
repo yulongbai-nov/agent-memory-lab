@@ -45,6 +45,8 @@ test('trusted proxy binds model, effort, tool scope, credentials and request bud
  assert.equal(stats.terminalCompleted,LIMITS.requests);
  assert.deepEqual(stats.observedModels,['gpt-6-luna']);
  assert.deepEqual(stats.usage.total_tokens,{reported:LIMITS.requests,tokens:LIMITS.requests*3});
+ assert.equal(stats.wireHashVersion,1);
+ assert.deepEqual(stats.wireHashes,calls.map(x=>require('node:crypto').createHash('sha256').update(JSON.stringify(x.body)).digest('hex')));
  for(const x of calls){
   assert.equal(x.url,'https://api.openai.com/v1/responses');
   assert.equal(x.redirect,'error');

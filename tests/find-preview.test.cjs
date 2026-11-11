@@ -305,3 +305,107 @@ test("excerpt preserves Unicode scalar boundaries and JSON escapes control chara
   assert.equal(excerpt("关键字 synthetic@example.invalid", "关键字"), null);
   assert.equal(excerpt("灯".repeat(100), "灯".repeat(100)), null);
 });
+test("CLI handles casefold expansion, matching named-review targets and terminal escapes in both backends", async (t) => {
+  const dir = await fs.mkdtemp(
+    path.join(os.tmpdir(), "find-preview-regression-"),
+  );
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const archive = await openArchive({ dir }),
+    foldSource = source("fold"),
+    manualSource = source("manual"),
+    controlSource = source("control");
+  const folded = "前".repeat(25) + "İ" + "a".repeat(238) + "尾".repeat(50),
+    keyword = "\u0307" + "a".repeat(238),
+    control = "terminal\u009b\u202eend";
+  for (const [src, item] of [
+    [
+      foldSource,
+      {
+        id: "fold",
+        kind: "message",
+        role: "user",
+        text: folded,
+        time: "2026-01-01T00:00:00Z",
+      },
+    ],
+    [
+      manualSource,
+      {
+        id: "manual",
+        kind: "message",
+        role: "user",
+        text: "clue: agreed plan",
+        time: "2026-01-02T00:00:00Z",
+      },
+    ],
+    [
+      controlSource,
+      {
+        id: "control",
+        kind: "message",
+        role: "assistant",
+        text: control,
+        time: "2026-01-03T00:00:00Z",
+      },
+    ],
+  ])
+    await archive.importBatch({
+      scope,
+      source: src,
+      checkpoint: { position: 1 },
+      items: [item],
+    });
+  const row = await archive.getItem({
+    ...scope,
+    source: manualSource,
+    id: "manual",
+  });
+  await archive.addAnnotation({
+    scope,
+    id: "review",
+    kind: "decision",
+    topic: "Manual",
+    text: "confirmed",
+    target: { id: "manual", revision: row.versionId, source: manualSource },
+  });
+  const inspect = () => {
+    const foldedResult = cli(dir, "find", "--keyword", keyword, "--preview");
+    assert.equal(foldedResult.topics.length, 1);
+    const p = foldedResult.topics[0].preview;
+    assert.ok(p);
+    assert.equal(p.text, "İ" + "a".repeat(238));
+    assert.equal(Buffer.byteLength(p.text), 240);
+    const manual = cli(dir, "find", "--keyword", "clue", "--preview"),
+      named = manual.topics.find((x) => x.topic === "Manual");
+    assert.ok(named);
+    assert.equal(named.preview.text, "clue: agreed plan");
+    assert.equal(named.preview.citation.revision, row.versionId);
+    const argv = [
+        path.join(__dirname, "../bin/memory.cjs"),
+        "find",
+        "--keyword",
+        "terminal",
+        "--preview",
+        "--dir",
+        dir,
+        "--owner",
+        scope.owner,
+        "--project",
+        scope.project,
+      ],
+      wire = execFileSync(process.execPath, argv, {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH, HOME: dir },
+      });
+    assert.ok(!wire.includes("\u009b"));
+    assert.ok(!wire.includes("\u202e"));
+    assert.match(wire, /\\u009b/);
+    assert.match(wire, /\\u202e/);
+    assert.equal(JSON.parse(wire).topics[0].preview.text, control);
+    return { foldedResult, manual, parsed: JSON.parse(wire) };
+  };
+  const before = inspect();
+  await migrateJsonToSqlite({ dir });
+  assert.deepEqual(inspect(), before);
+  archive.close?.();
+});

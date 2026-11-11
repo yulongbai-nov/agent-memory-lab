@@ -132,7 +132,9 @@ function excerpt(text: string, keyword: string) {
   let folded = 0,
     index = 0;
   while (index < chars.length && folded < pos) {
-    folded += chars[index]!.toLocaleLowerCase().length;
+    const width = chars[index]!.toLocaleLowerCase().length;
+    if (folded + width > pos) break;
+    folded += width;
     index++;
   }
   let start = index,
@@ -237,7 +239,7 @@ async function addFindPreviews(
         row = fetched;
     }
     if (row && (!direct || a.topic !== groupName(row)))
-      add(groups, a.topic, "命名话题", row, false);
+      add(groups, a.topic, "命名话题", row, direct);
   }
   return {
     ...base,

@@ -725,6 +725,7 @@ async function runRetrievalCheck(fixture, views) {
       const start = performance.now();
       const rows = await views[arm]();
       const context = selectEvidence(question, rows);
+      const retrievalMs = round(performance.now() - start);
       const selectedRefs = context.sources.map((row) => row.ref);
       const referenced = [
         ...new Set([
@@ -753,7 +754,7 @@ async function runRetrievalCheck(fixture, views) {
         referenced,
         audit,
         candidates,
-        retrievalMs: round(performance.now() - start),
+        retrievalMs,
       });
     }
   }

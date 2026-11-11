@@ -12,6 +12,7 @@ const {
   assessAlias,
   reserveLock,
   compareBaseline,
+  freezeAgainstBaseline,
 } = require("../benchmark/memory-views/paired-alias-live.cjs");
 const {
   construct,
@@ -20,6 +21,28 @@ const {
 } = require("../benchmark/memory-views/paired-reader.cjs");
 const { buildRequest } = require("../benchmark/harness-e2e/openai-proxy.cjs");
 const hash = (x) => createHash("sha256").update(x).digest("hex");
+test("bundled baseline reproduces the historical request freeze without a result file", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "alias-receipt-test-"));
+  try {
+    const receipt = path.join(
+        __dirname,
+        "../benchmark/memory-views/paired-baseline-receipt.json",
+      ),
+      output = path.join(dir, "freeze.json");
+    const result = await freezeAgainstBaseline(receipt, output);
+    assert.equal(result.cases.length, 8);
+    assert.equal(result.sentToRealProvider, 0);
+    assert.equal(result.baseline.onlyReferenceSerializationDiffers, true);
+    const altered = path.join(dir, "altered.json");
+    await fs.writeFile(altered, (await fs.readFile(receipt, "utf8")) + " ");
+    await assert.rejects(
+      freezeAgainstBaseline(altered, path.join(dir, "bad.json")),
+      /unexpected synthetic baseline/,
+    );
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
 test("aliases decode against their own case and arm; invalid citations are not accepted", async () => {
   const cases = await constructAliases(),
     x = cases.find(

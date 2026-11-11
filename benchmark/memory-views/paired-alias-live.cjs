@@ -14,6 +14,8 @@ const { decodeContext } = require("./reference-alias.cjs");
 const hash = (x) => createHash("sha256").update(x).digest("hex");
 const BASELINE_SHA =
   "b3cbb9ae427e338b3988d5ea619ba6c3069934a4cb861a5c8093b112314d6608";
+const RECEIPT_SHA =
+  "3f56b8332f6dcc717b37474017e09c73662e0eba46c931ede3ed035afa95f7ef";
 function compareBaseline(samples, wire, baselineCases) {
   if (
     samples.length !== 8 ||
@@ -50,10 +52,19 @@ function compareBaseline(samples, wire, baselineCases) {
 }
 async function freezeAgainstBaseline(baselineFile, output) {
   const bytes = await fs.readFile(baselineFile);
-  if (hash(bytes) !== BASELINE_SHA)
-    throw Error("unexpected original result file");
-  const baseline = JSON.parse(bytes),
-    check = await preflightRun(),
+  const inputSha = hash(bytes);
+  if (![BASELINE_SHA, RECEIPT_SHA].includes(inputSha))
+    throw Error("unexpected synthetic baseline");
+  const source = JSON.parse(bytes);
+  if (
+    inputSha === RECEIPT_SHA &&
+    (source.schemaVersion !== 1 ||
+      source.scope !== "public-synthetic-only" ||
+      source.sourceResultSha256 !== BASELINE_SHA)
+  )
+    throw Error("invalid synthetic receipt");
+  const baselineCases = inputSha === RECEIPT_SHA ? source.cases : source.frozen;
+  const check = await preflightRun(),
     samples = await constructAliases(),
     wire = await preflight(samples);
   if (
@@ -67,12 +78,12 @@ async function freezeAgainstBaseline(baselineFile, output) {
     )
   )
     throw Error("independent alias freeze mismatch");
-  compareBaseline(samples, wire, baseline.frozen);
+  compareBaseline(samples, wire, baselineCases);
   const result = {
     ...check,
     baseline: {
       resultSha256: BASELINE_SHA,
-      cases: baseline.frozen.map(({ id, arm, wireSha256, wireBody }) => ({
+      cases: baselineCases.map(({ id, arm, wireSha256, wireBody }) => ({
         id,
         arm,
         wireSha256,

@@ -3,7 +3,6 @@ const { createHash } = require("node:crypto");
 const scope = { owner: "synthetic", project: "print-room" };
 const otherScope = { ...scope, project: "south-annex" };
 const topic = "Museum print handover";
-const limits = { topK: 3, contextBytes: 1900 };
 const time = (value) => `2026-04-07T${value}:00Z`;
 
 function syntheticRows(renamed) {

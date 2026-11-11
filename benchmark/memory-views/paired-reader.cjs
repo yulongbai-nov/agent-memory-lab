@@ -17,10 +17,7 @@ const {
 } = require("./run.cjs");
 const { selectEvidenceBundle } = require("./evidence-bundle.cjs");
 const held = require("./paired-fixtures.cjs");
-const {
-  createBudgetProxy,
-  LIMITS,
-} = require("../harness-e2e/openai-proxy.cjs");
+const { createBudgetProxy } = require("../harness-e2e/openai-proxy.cjs");
 const { safeMetadata } = require("../harness-e2e/response-metadata.cjs");
 const { score } = require("./paired-score.cjs");
 const hash = (s) => createHash("sha256").update(s).digest("hex");

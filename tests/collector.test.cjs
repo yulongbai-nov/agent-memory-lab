@@ -139,3 +139,37 @@ test("watch routes incremental sessions to capture new records after baseline", 
   assert.equal(result.collector.sessionsAttempted, 1);
   assert.ok(result.collector.itemsImported >= 1);
 });
+test("collector accepts v1 state and rejects malformed entry fields", async (t) => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "collector-state-"));
+  t.after(() => fs.rm(tmp, { recursive: true, force: true }));
+  const root = path.join(tmp, "source"),
+    dir = path.join(tmp, "archive");
+  await fs.mkdir(root);
+  await fs.mkdir(dir, { mode: 0o700 });
+  await fs.writeFile(path.join(root, "one.jsonl"), "synthetic");
+  const op = { scope: { owner: "o", project: "p" }, archive: { dir } };
+  const input = { root, source: "codex", instance: "i" };
+  const ingest = async () => ({ itemsImported: 1 });
+  await collectChanged(op, input, ingest);
+  const file = path.join(
+    dir,
+    (await fs.readdir(dir)).find(
+      (name) => name.startsWith("collector-") && name.endsWith(".json"),
+    ),
+  );
+  const state = JSON.parse(await fs.readFile(file, "utf8"));
+  const entry = Object.values(state.entries)[0];
+  Object.assign(entry, {
+    attemptedAt: 1,
+    partial: false,
+    extraLegacyField: "preserved",
+  });
+  await fs.writeFile(file, JSON.stringify(state));
+  assert.equal((await collectChanged(op, input, ingest)).sessionsAttempted, 0);
+  entry.attemptedAt = "invalid";
+  await fs.writeFile(file, JSON.stringify(state));
+  await assert.rejects(
+    collectChanged(op, input, ingest),
+    /Invalid collector state/,
+  );
+});

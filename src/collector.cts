@@ -4,11 +4,14 @@ import * as crypto from "node:crypto";
 import { createRequire } from "node:module";
 const load = createRequire(__filename);
 const { discoverIntakeSources } = load("../codex-discovery.cjs") as {
-  discoverIntakeSources: (
-    op: Operation,
-    input: Input,
-    root: string,
-  ) => Promise<Snapshot>;
+  discoverIntakeSources: {
+    (op: Operation, input: SingleInput, root: string): Promise<Snapshot>;
+    (
+      op: CombinedOperation,
+      input: CombinedInput,
+      root: string,
+    ): Promise<Snapshot>;
+  };
 };
 const { withWriterLock } = load("../lock.cjs") as {
   withWriterLock: <T>(
@@ -24,12 +27,27 @@ const signature = (st: import("node:fs").Stats) =>
   hash(JSON.stringify([st.size, st.mtimeMs, st.ctimeMs, st.ino]));
 interface Operation {
   scope: { owner: string; project: string };
-  archive: { dir: string; indexFile?: string };
+  archive: {
+    dir: string;
+    indexFile?: string;
+    getCheckpoint?: (key: CheckpointKey) => Promise<unknown>;
+  };
 }
+interface CheckpointKey {
+  owner: string;
+  project: string;
+  harness: string;
+  instance: string;
+  session: string;
+}
+type CombinedOperation = Operation & {
+  archive: { getCheckpoint: (key: CheckpointKey) => Promise<unknown> };
+};
 interface Input {
   root: string;
   instance: string;
   source: string;
+  archiveRoot?: string | undefined;
   "max-sessions"?: string | number;
   "max-archive-mib"?: string | number;
   [key: string]: unknown;
@@ -61,6 +79,22 @@ interface State {
   version: number;
   entries: Record<string, EntryState>;
 }
+type SingleInput = Input & { archiveRoot?: undefined };
+type CombinedInput = Input & { archiveRoot: string; source: "codex" };
+interface CollectorResult {
+  skippedForCapacity: boolean;
+  baseline: boolean;
+  skippedForBackfill: boolean;
+  discovered: number;
+  sessionsAttempted: number;
+  sessionsFailed: number;
+  itemsImported: number;
+  pending: number;
+  blocked: number;
+  inaccessible: number;
+  traversalLimited: boolean;
+  unverifiable?: number;
+}
 type Ingest = (
   op: Operation,
   input: Input & { file: string; session: string; collectorLookback: number },
@@ -69,9 +103,47 @@ type Ingest = (
   partial?: boolean;
   progressed?: boolean;
 }>;
+function hasCheckpoint(op: Operation): op is CombinedOperation {
+  return typeof op.archive.getCheckpoint === "function";
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function isCollectorState(value: unknown): value is State {
+  if (
+    !isRecord(value) ||
+    value.version !== 1 ||
+    !isRecord(value.entries) ||
+    Object.keys(value.entries).length > 20000
+  )
+    return false;
+  return Object.values(value.entries).every(
+    (entry) =>
+      isRecord(entry) &&
+      (entry.sig === undefined || typeof entry.sig === "string") &&
+      (entry.partial === undefined || typeof entry.partial === "boolean") &&
+      (entry.blocked === undefined || typeof entry.blocked === "string") &&
+      (entry.attemptedAt === undefined ||
+        typeof entry.attemptedAt === "number"),
+  );
+}
 const errorCode = (error: unknown) =>
   (error as NodeJS.ErrnoException | null)?.code;
-async function collectChanged(op: Operation, input: Input, ingest: Ingest) {
+function collectChanged(
+  op: Operation,
+  input: SingleInput,
+  ingest: Ingest,
+): Promise<CollectorResult>;
+function collectChanged(
+  op: CombinedOperation,
+  input: CombinedInput,
+  ingest: Ingest,
+): Promise<CollectorResult>;
+async function collectChanged(
+  op: Operation,
+  input: Input,
+  ingest: Ingest,
+): Promise<CollectorResult> {
   if (
     !input.root ||
     !input.instance ||
@@ -150,7 +222,24 @@ async function collectChanged(op: Operation, input: Input, ingest: Ingest) {
   );
   const stateFile = path.join(op.archive.dir, `collector-${sourceId}.json`);
   return withWriterLock(op.archive.dir, `collector:${sourceId}`, async () => {
-    const snapshot = await discoverIntakeSources(op, input, root);
+    let snapshot: Snapshot;
+    if (input.archiveRoot === undefined) {
+      snapshot = await discoverIntakeSources(
+        op,
+        { ...input, archiveRoot: undefined },
+        root,
+      );
+    } else {
+      if (input.source !== "codex" || !input.archiveRoot)
+        throw new Error("Archive root requires Codex source");
+      if (!hasCheckpoint(op))
+        throw new Error("Archive root requires checkpoint lookup");
+      snapshot = await discoverIntakeSources(
+        op,
+        { ...input, source: "codex", archiveRoot: input.archiveRoot },
+        root,
+      );
+    }
     const current: CurrentEntry[] = [];
     let inaccessible = snapshot.inaccessible;
     for (const entry of snapshot.files) {
@@ -173,15 +262,9 @@ async function collectChanged(op: Operation, input: Input, ingest: Ingest) {
       const st = await fs.lstat(stateFile);
       if (!st.isFile() || st.isSymbolicLink() || st.mode & 0o077)
         throw new Error("Invalid collector state");
-      state = JSON.parse(await fs.readFile(stateFile, "utf8")) as State;
-      if (
-        state.version !== 1 ||
-        !state.entries ||
-        typeof state.entries !== "object" ||
-        Array.isArray(state.entries) ||
-        Object.keys(state.entries).length > 20000
-      )
-        throw new Error("Invalid collector state");
+      const parsed: unknown = JSON.parse(await fs.readFile(stateFile, "utf8"));
+      if (!isCollectorState(parsed)) throw new Error("Invalid collector state");
+      state = parsed;
     } catch (error) {
       if (errorCode(error) !== "ENOENT") throw error;
     }

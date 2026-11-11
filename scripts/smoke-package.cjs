@@ -35,29 +35,58 @@ async function main() {
     ]);
     const installed = join(prefix, "node_modules", "agent-memory-lab");
     assert.equal(existsSync(join(prefix, "node_modules", "typescript")), false);
-    const collector = require(join(installed, "lib", "collector.cjs"));
-    assert.equal(typeof collector.collectChanged, "function");
     const source = join(work, "collector-source");
     const collectorArchive = join(work, "collector-archive");
+    const manifest = join(work, "collector-manifest.json");
     await fs.mkdir(source);
     await fs.mkdir(collectorArchive, { mode: 0o700 });
     const session = join(source, "fixture.jsonl");
-    await fs.writeFile(session, "synthetic first");
-    const operation = {
-      scope: { owner: "fixture", project: "fixture" },
-      archive: { dir: collectorArchive },
-    };
-    const input = { root: source, source: "codex", instance: "fixture" };
-    const ingest = async () => ({ itemsImported: 1 });
-    assert.equal(
-      (await collector.collectChanged(operation, input, ingest)).baseline,
-      true,
+    const message = (text) =>
+      JSON.stringify({
+        type: "message",
+        payload: { role: "user", content: text },
+      }) + "\n";
+    await fs.writeFile(session, message("synthetic first"));
+    await fs.writeFile(
+      manifest,
+      JSON.stringify([
+        {
+          root: source,
+          source: "codex",
+          instance: "fixture",
+          incremental: true,
+          "max-sessions": "3",
+          "max-records": "40",
+        },
+      ]),
     );
-    await fs.appendFile(session, " synthetic second");
-    assert.equal(
-      (await collector.collectChanged(operation, input, ingest)).itemsImported,
-      1,
-    );
+    const watch = () =>
+      JSON.parse(
+        run(process.execPath, [
+          join(installed, "bin", "memory.cjs"),
+          "watch",
+          "--manifest",
+          manifest,
+          "--dir",
+          collectorArchive,
+          "--owner",
+          "fixture",
+          "--project",
+          "fixture",
+          "--runs",
+          "1",
+        ]),
+      );
+    const baseline = watch();
+    assert.equal(baseline.collector.baselines, 1);
+    assert.equal(baseline.collector.sessionsAttempted, 0);
+    await fs.appendFile(session, message("synthetic second"));
+    const incremental = watch();
+    assert.equal(incremental.collector.sessionsAttempted, 1);
+    assert.ok(incremental.collector.itemsImported >= 1);
+    const replay = watch();
+    assert.equal(replay.collector.sessionsAttempted, 0);
+    assert.equal(replay.collector.itemsImported, 0);
 
     const validation = require(
       join(installed, "lib", "semantic-validation.cjs"),

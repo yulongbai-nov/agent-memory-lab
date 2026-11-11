@@ -10,6 +10,7 @@ const typescript = [
   "src/ontology-projection.cts",
   "src/local-draft-state.cts",
   "src/local-admission.cts",
+  "src/local-draft-read.cts",
   "src/collector.cts",
   "src/semantic-queue.cts",
   "src/semantic-validation.cts",
@@ -23,6 +24,12 @@ const lintedJavaScript = [
   "benchmark/harness-e2e/codex/read-contract.cjs",
   "benchmark/harness-e2e/dsh/bounded-contract.cjs",
   "benchmark/memory-views/run.cjs",
+  "benchmark/memory-views/reference-alias.cjs",
+  "benchmark/memory-views/paired-alias-preflight.cjs",
+  "benchmark/memory-views/paired-alias-worker.cjs",
+  "benchmark/memory-views/paired-alias-live.cjs",
+  "tests/paired-alias-live.test.cjs",
+  "tests/reference-alias.test.cjs",
   "benchmark/memory-views/evidence-bundle.cjs",
   "benchmark/memory-views/paired-fixtures.cjs",
   "benchmark/memory-views/paired-oracle-worker.cjs",
@@ -59,6 +66,7 @@ const lintedJavaScript = [
   "tests/nocache-hash.test.cjs",
   "tests/local-run-integrity.test.cjs",
   "tests/local-derive-recovery.test.cjs",
+  "tests/local-draft-read.test.cjs",
 ];
 const files = execFileSync(
   "git",

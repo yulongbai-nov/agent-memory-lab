@@ -33,3 +33,22 @@ The five-question retrieval report also shows a separate `structured-bundle` gro
 The temporal request is retrospective by default and does not claim the review was known at the historical valid time. If a knowledge cutoff is explicitly supplied for that request, selected reviews must have a known time by that cutoff. For dependency requests, the cutoff constrains the dependency relationship; the decision and task are read from the current reviewed archive. A review's explicit effective time, or otherwise its cited source time, supplies a lower bound. Multiple competing change heads or unsupported revision chains are reported as unknown rather than silently resolved. The additional group does not constitute a product interface or a model evaluation.
 
 The independent held-out tests reuse the same lexical selector with identical scoped rows and caps for comparison, alongside the explicit request for the bundle. The lexical results are recorded as diagnostics rather than a requirement that the baseline fail. The held-out cases also exercise time cutoffs, missing or contradictory evidence, renamed IDs, ordering, and insufficient budgets.
+
+## Synthetic short-reference preflight
+
+`node benchmark/memory-views/paired-alias-preflight.cjs --preflight [output]` constructs the same four pairs and chooses the same evidence under the existing 3-reference/1,900-byte limit before changing presentation. It changes only each source's displayed reference to a case-and-arm-bound short alias; source text, review metadata, numeric links, question, instructions, and JSON schema remain unchanged. No citation enum is provided. The application-side map retains the complete scoped source revision and rejects unknown, mismatched, duplicate or cross-package mappings; decoded citations are restored to the original reference before scoring. These aliases are display-only and are not durable source identifiers.
+
+The preflight command uses a fake upstream only. It records the full synthetic forwarded bodies and hashes, independently substitutes every scoring-oracle item in isolated processes, and checks an intentional oracle-leak negative control. The separate long-reference experiment and its previous real results are unchanged. The separate `paired-alias-live.cjs` can freeze an eight-slot comparison against the recorded synthetic baseline; its explicit live mode requires a fresh hash-capable bounded proxy, a content-derived one-shot lock and a new result file. Tests remain zero-model. Preflight and independent review precede any separately initiated run.
+
+The repository includes `paired-baseline-receipt.json`: eight public synthetic original request bodies, each with its original SHA-256 and the source result file's SHA-256. It contains no model answers or usage. The receipt's own SHA-256 is pinned in the runner. It permits a fresh checkout to repeat the **zero-model** comparison without the historical result file:
+
+```sh
+npm ci --ignore-scripts
+npm run build
+node benchmark/memory-views/paired-alias-live.cjs --preflight \
+  benchmark/memory-views/paired-baseline-receipt.json /tmp/paired-alias-freeze.json
+```
+
+The command refuses an existing output file. It checks that alias reversal reconstructs all eight original forwarded bodies and that isolated oracle substitutions and per-case leak controls behave as expected. The optional original result file remains accepted only at its pinned hash. This receipt reproduces request parity, not any model answer, usage record, real-network delivery, or claim of statistical improvement. A live run is separate and explicitly enabled; the proxy records only safe outgoing-body hashes, and a missing or mismatched hash stops later slots.
+
+The source-result hash in the baseline receipt identifies the earlier long-reference synthetic result. The later short-reference model trial was performed with commit `8b7d446ebc18354f478d04d5664e2c2ed2da6809`; this packaging change was not used in that trial. A fresh preflight verifies request equivalence only and does not recreate or modify either historical result.

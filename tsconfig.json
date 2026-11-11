@@ -23,6 +23,7 @@
     "src/semantic-queue.cts",
     "src/local-draft-state.cts",
     "src/local-admission.cts",
+    "src/local-draft-read.cts",
     "src/collector.cts"
   ]
 }

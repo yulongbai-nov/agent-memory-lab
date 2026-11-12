@@ -49,9 +49,9 @@ test('synthetic DSH import supports bounded discovery and evidence-backed review
   // Reviewed projections are explicitly supplied by a reviewer, never inferred by the adapter.
   const projectionSource = {harness:'review',instance:'synthetic',session:'release-review'};
   await archive.importBatch({scope,source:projectionSource,checkpoint:{previous:null,position:1},items:[
-    {id:'decision',kind:'review',time:'2026-01-01',text:'Release Monday',metadata:{topic:'Release plan',kind:'decision',basis:'confirmed',reviewed:true,evidence:cited(original)}},
-    {id:'change',kind:'review',time:'2026-01-02',text:'Release Tuesday',metadata:{topic:'Release plan',kind:'change',basis:'confirmed',reviewed:true,revises:['decision'],evidence:cited(changed)}},
-    {id:'todo',kind:'review',time:'2026-01-04',text:'Prepare the release checklist',metadata:{topic:'Release plan',kind:'todo',reviewed:true,next_step:'Prepare the release checklist',evidence:cited(todo)}}
+    {id:'decision',kind:'review',time:'2026-01-01T00:00:00Z',text:'Release Monday',metadata:{topic:'Release plan',kind:'decision',basis:'confirmed',reviewed:true,evidence:cited(original)}},
+    {id:'change',kind:'review',time:'2026-01-02T00:00:00Z',text:'Release Tuesday',metadata:{topic:'Release plan',kind:'change',basis:'confirmed',reviewed:true,revises:['decision'],evidence:cited(changed)}},
+    {id:'todo',kind:'review',time:'2026-01-04T00:00:00Z',text:'Prepare the release checklist',metadata:{topic:'Release plan',kind:'todo',reviewed:true,next_step:'Prepare the release checklist',evidence:cited(todo)}}
   ]});
   const timeline = await query.timeline({...scope,topic:'Release plan'});
   assert.deepEqual(timeline.map(row => row.kind), ['decision','change','todo']);

@@ -6,6 +6,7 @@ export default defineConfig([
   { ignores: ["node_modules/**", "lib/generated/**"] },
   {
     files: [
+      "src/query-time.cts",
       "src/bounded-memory-find.cts",
       "src/bounded-memory-read.cts",
       "src/chatgpt-snapshot.cts",
@@ -27,6 +28,8 @@ export default defineConfig([
   },
   {
     files: [
+      "lib/query-time.cjs",
+      "tests/query-time.test.cjs",
       "benchmark/harness-e2e/codex/find-contract.cjs",
       "benchmark/harness-e2e/codex/read-contract.cjs",
       "benchmark/harness-e2e/dsh/bounded-contract.cjs",

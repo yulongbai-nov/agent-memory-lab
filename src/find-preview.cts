@@ -1,6 +1,6 @@
 "use strict";
 // CLI-only, opt-in projection snippets. Original bytes are never opened here.
-export {};
+import { matchesTime } from "./query-time.cjs";
 type Scope = { owner: string; project: string };
 type Source = {
   harness: string;
@@ -90,8 +90,7 @@ const availability = (r: RecordRow) => {
 };
 function matches(r: RecordRow, args: Args) {
   const time = stamp(r.item);
-  if (args.from && (!time || time < args.from)) return false;
-  if (args.to && (!time || time > args.to)) return false;
+  if (!matchesTime(time, args)) return false;
   const q = String(args.keyword || "")
     .toLocaleLowerCase()
     .trim();

@@ -43,7 +43,8 @@ test('SQLite applies scoped filters, annotation topic evidence, and exports post
  await a.addAnnotation({scope,id:'d',kind:'decision',text:'A decision',topic:'Alpha',target:{id:'b',revision:target.versionId}});
  await migrateJsonToSqlite({dir});
  const db=await openSqlite({dir}); t.after(()=>db.close());
- assert.deepEqual(db.listItems(scope,{from:'2026-01-01',to:'2026-01-31'}).map(v=>v.item.id),['a']);
+ // Date-only sources have no absolute instant; retain them without a time filter.
+ assert.deepEqual(db.listItems(scope,{from:'2026-01-01',to:'2026-01-31'}).map(v=>v.item.id),[]);
  assert.deepEqual(db.listItems(scope,{keyword:'ÆTHER'}).map(v=>v.item.id),['a']);
  assert.deepEqual(db.listItems(scope,{topic:'Alpha'}).map(v=>v.item.id),['a','b','c']);
  assert.deepEqual(db.listItems(scope,{topic:'Alpha',keyword:'other'}).map(v=>v.item.id),['b']);

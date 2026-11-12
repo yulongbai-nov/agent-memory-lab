@@ -127,6 +127,14 @@ test('reviewed pages preserve the full timeline and reject stale or rebound curs
   if(backend==='sqlite') await migrateJsonToSqlite({dir});
   const archive=await openArchive({dir}),query=createQuery(archive);t.after(()=>archive.close?.());
   const first=await query.reviewedTimelinePage({...scope,topic:'T'});assert.equal(first.rows.length,20);assert(first.nextCursor);
+  if(backend==='json') {
+   const priorRows=(await archive.listItems(scope)).filter(r=>r.item.metadata?.topic==='T');
+   const priorInputs=[priorRows.map(r=>[r.item.id,r.versionId]),[]];
+   const fingerprint=require('node:crypto').createHash('sha256').update(JSON.stringify(priorInputs)).digest('hex');
+   const {binding}=JSON.parse(Buffer.from(first.nextCursor,'base64url').toString());
+   const prior=Buffer.from(JSON.stringify({binding,offset:20,fingerprint})).toString('base64url');
+   await assert.rejects(query.reviewedTimelinePage({...scope,topic:'T',cursor:prior}),/reviewed timeline cursor is stale/);
+  }
   const unrelated=await archive.getItem({...scope,id:'unrelated'});
   await archive.addAnnotation({scope,id:'unrelated-'+backend,kind:'annotation',text:'other note',target:{id:'unrelated',revision:unrelated.versionId,source}});
   const last=await query.reviewedTimelinePage({...scope,topic:'T',cursor:first.nextCursor});assert.equal(last.rows.length,3);assert.equal(last.nextCursor,null);

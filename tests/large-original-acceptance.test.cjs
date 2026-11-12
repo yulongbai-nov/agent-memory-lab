@@ -79,7 +79,13 @@ test("targeted repair appends one observation, preserves its old version and che
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   const store = path.join(dir, "store");
   await fs.mkdir(store, { mode: 0o700 });
-  const file = path.join(dir, "session.jsonl");
+  const sessionId = "00000000-0000-4000-8000-000000000001";
+  const session = `2026/01/01/rollout-2026-01-01T00-00-00-${sessionId}.jsonl`;
+  const root = path.join(dir, "sessions");
+  const archiveRoot = path.join(dir, "archived_sessions");
+  const file = path.join(root, session);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.mkdir(archiveRoot);
   const record = (id, text) =>
     JSON.stringify({
       timestamp: "2026-01-01T00:00:00Z",
@@ -97,12 +103,19 @@ test("targeted repair appends one observation, preserves its old version and che
   await fs.writeFile(
     file,
     Buffer.concat([
+      Buffer.from(
+        JSON.stringify({
+          timestamp: "2026-01-01T00:00:00Z",
+          type: "session_meta",
+          payload: { id: sessionId },
+        }) + "\n",
+      ),
       first,
       Buffer.from(record("two", "other synthetic record")),
     ]),
   );
   const scope = { owner: "synthetic", project: "repair" };
-  const source = { harness: "codex", instance: "synthetic", session: "one" };
+  const source = { harness: "codex", instance: "synthetic", session };
   let archive = await openArchive({ dir: store });
   t.after(() => archive.close?.());
   const legacyCapture = async ({ bytes, coordinate }) =>
@@ -123,8 +136,8 @@ test("targeted repair appends one observation, preserves its old version and che
   });
   archive = await openArchive({ dir: store });
   const before = await archive.listItems(scope);
-  assert.equal(before.length, 2);
-  const old = before.find((row) => row.item.metadata.coordinate === 1);
+  assert.equal(before.length, 3);
+  const old = before.find((row) => row.item.metadata.coordinate === 2);
   assert.equal(old.item.metadata.original.reason, "record-size-limit");
   const key = { ...scope, ...sourceIdentity(source) };
   const checkpoint = await archive.getCheckpoint(key);
@@ -134,9 +147,9 @@ test("targeted repair appends one observation, preserves its old version and che
     JSON.stringify([
       {
         source: "codex",
-        file,
+        root,
+        archiveRoot,
         instance: source.instance,
-        session: source.session,
       },
     ]),
   );
@@ -160,7 +173,7 @@ test("targeted repair appends one observation, preserves its old version and che
     JSON.parse((await run(process.execPath, args)).stdout);
   await repair();
   const after = await archive.listItems(scope);
-  assert.equal(after.length, 3);
+  assert.equal(after.length, 4);
   const restored = after.find(
     (row) => row.item.id === old.item.id && row.versionId !== old.versionId,
   );
@@ -183,10 +196,10 @@ test("targeted repair appends one observation, preserves its old version and che
   );
   assert.deepEqual(await archive.getCheckpoint(key), checkpoint);
   assert.equal(
-    after.filter((row) => row.item.metadata.coordinate === 2).length,
+    after.filter((row) => row.item.metadata.coordinate === 3).length,
     1,
   );
   await repair();
-  assert.equal((await archive.listItems(scope)).length, 3);
+  assert.equal((await archive.listItems(scope)).length, 4);
   assert.deepEqual(await archive.getCheckpoint(key), checkpoint);
 });

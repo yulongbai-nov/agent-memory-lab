@@ -140,7 +140,13 @@ export async function repairOriginal(
           (k) => identity[k] === prior.source[k],
         )
       )
-        candidates.push({ ...input, ...entry, identity });
+        candidates.push({
+          source: input.source,
+          instance: input.instance,
+          file: entry.file,
+          session: entry.session,
+          identity,
+        });
     }
   }
   if (candidates.length !== 1)

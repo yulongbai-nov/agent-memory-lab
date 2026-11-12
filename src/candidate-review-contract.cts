@@ -132,7 +132,7 @@ const checkCapsule = ajv.compile(
       originReceiptSha256: hex,
       admission,
       candidate,
-      inputProjections: projections,
+      inputProjections: { ...projections, maxItems: 3 },
       primary: { type: "integer", minimum: 1, maximum: 3 },
     },
     [

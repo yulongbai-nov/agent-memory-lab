@@ -302,6 +302,39 @@ async function verify(
   }
 }
 
+async function verifiedInputs(
+  archive: Archive,
+  scope: Scope,
+  candidate: Candidate,
+  inputs: Projection[],
+) {
+  const picked: Projection[] = [];
+  for (const evidence of candidate.evidence) {
+    const row = await archive.getItem({
+      ...scope,
+      source: splitSource(evidence.source),
+      id: evidence.item,
+      revision: evidence.version,
+    });
+    if (!row) throw Error("Evidence unavailable");
+    let selected: Projection | undefined;
+    for (const p of inputs.filter((x) => sameRef(x, evidence))) {
+      const result = await verifyDeclaredProjection(archive.dir, row, p);
+      if (
+        result.status === "verified" &&
+        result.text &&
+        matchesQuote(evidence, p, result.text)
+      ) {
+        selected = p;
+        break;
+      }
+    }
+    if (!selected) throw Error("Evidence verification failed");
+    if (!picked.some((x) => canonical(x) === canonical(selected)))
+      picked.push(selected);
+  }
+  return picked;
+}
 function scoped(scope: Scope) {
   return { owner: scope.owner, project: scope.project };
 }
@@ -514,33 +547,19 @@ async function review(options: {
         : options.basis !== undefined)
     )
       throw Error("Unsupported review");
-    await verify(archive, scope, [candidate], snapshot.inputProjections);
+    const inputs = await verifiedInputs(
+      archive,
+      scope,
+      candidate,
+      snapshot.inputProjections,
+    );
     const evidence = candidate.evidence[primary - 1];
     if (!evidence) throw Error("Missing primary evidence");
     const target = {
-        id: evidence.item,
-        revision: evidence.version,
-        source: splitSource(evidence.source),
-      },
-      inputs = snapshot.inputProjections.filter((p) =>
-        candidate.evidence.some(
-          (e) =>
-            sameRef(p, e) &&
-            p.kind === e.originalSpan.kind &&
-            p.fieldPath === e.originalSpan.fieldPath &&
-            p.originalSha256 === e.originalSpan.originalSha256 &&
-            e.originalSpan.previewStartUtf16 >= p.previewStartUtf16 &&
-            e.originalSpan.previewEndUtf16 <= p.previewEndUtf16 &&
-            e.originalSpan.startUtf16 ===
-              p.startUtf16 +
-                e.originalSpan.previewStartUtf16 -
-                p.previewStartUtf16 &&
-            e.originalSpan.endUtf16 ===
-              p.startUtf16 +
-                e.originalSpan.previewEndUtf16 -
-                p.previewStartUtf16,
-        ),
-      );
+      id: evidence.item,
+      revision: evidence.version,
+      source: splitSource(evidence.source),
+    };
     const capsule: Omit<Capsule, "reviewedAt"> = {
       formatVersion: 2,
       snapshotSha256: match[1]!,

@@ -118,12 +118,17 @@ test('topic source pages preserve scope, revisions, cursor binding and append fe
 test('reviewed pages preserve the full timeline and reject stale or rebound cursors',async t=>{
  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'reviewed-page-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
  const scope={owner:'o',project:'p'},source={harness:'h',instance:'i',session:'s'},a=await openArchive({dir});
- await a.importBatch({scope,source,checkpoint:{position:1},items:Array.from({length:23},(_,i)=>({id:'r'+i,kind:'message',text:'review '+i,time:'2026-01-01T00:00:00Z',metadata:{topic:'T',reviewed:true,kind:i%2?'todo':'decision'}}))});
+ await a.importBatch({scope,source,checkpoint:{position:1},items:[
+  ...Array.from({length:23},(_,i)=>({id:'r'+i,kind:'message',text:'review '+i,time:'2026-01-01T00:00:00Z',metadata:{topic:'T',reviewed:true,kind:i%2?'todo':'decision'}})),
+  {id:'unrelated',kind:'message',text:'other topic',metadata:{topic:'X'}}
+ ]});
  const {createQuery}=require('../lib/query.cjs');
  for(const backend of ['json','sqlite']) {
   if(backend==='sqlite') await migrateJsonToSqlite({dir});
   const archive=await openArchive({dir}),query=createQuery(archive);t.after(()=>archive.close?.());
   const first=await query.reviewedTimelinePage({...scope,topic:'T'});assert.equal(first.rows.length,20);assert(first.nextCursor);
+  const unrelated=await archive.getItem({...scope,id:'unrelated'});
+  await archive.addAnnotation({scope,id:'unrelated-'+backend,kind:'annotation',text:'other note',target:{id:'unrelated',revision:unrelated.versionId,source}});
   const last=await query.reviewedTimelinePage({...scope,topic:'T',cursor:first.nextCursor});assert.equal(last.rows.length,3);assert.equal(last.nextCursor,null);
   assert.deepEqual([...first.rows,...last.rows],await query.reviewedTimeline({...scope,topic:'T'}));
   await assert.rejects(query.reviewedTimelinePage({...scope,topic:'X',cursor:first.nextCursor}),/invalid reviewed timeline cursor/);
@@ -135,4 +140,40 @@ test('reviewed pages preserve the full timeline and reject stale or rebound curs
   await archive.addAnnotation({scope,id:'note-'+backend,kind:'annotation',text:'new note',target:ref});
   await assert.rejects(query.reviewedTimelinePage({...scope,topic:'T',cursor:first.nextCursor}),/reviewed timeline cursor is stale/);
  }
+});
+
+test('reviewed history preserves cross-topic aliases, lineage and precise time across backends',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'reviewed-alias-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const scope={owner:'synthetic',project:'p'},other={owner:'other',project:'p'},source={harness:'dsh',instance:'i',session:'s'},outside={harness:'codex',instance:'i',session:'other'},a=await openArchive({dir});
+ await a.importBatch({scope,source,checkpoint:{position:1},items:[
+  {id:'root',kind:'message',text:'root',time:'2026-01-01T01:00:00.000000001+01:00',metadata:{topic:'Native'}},
+  {id:'evidence',kind:'message',text:'evidence',time:'2026-01-01T00:00:00.000000002Z',metadata:{topic:'Elsewhere'}},
+  {id:'legacy',kind:'message',text:'legacy',time:'2026-01-01T00:00:00.000000002Z',metadata:{topic:'Alias',reviewed:true,kind:'decision'}},
+  {id:'unreviewed',kind:'message',text:'unreviewed',time:'2026-01-01T00:00:00Z',metadata:{topic:'Alias'}}]});
+ await a.importBatch({scope,source:outside,checkpoint:{position:1},items:[{id:'outside',kind:'message',text:'outside',metadata:{topic:'Unrelated'}}]});
+ await a.importBatch({scope:other,source,checkpoint:{position:1},items:[{id:'private',kind:'message',text:'private',metadata:{topic:'Alias',reviewed:true,kind:'decision'}}]});
+ const root=await a.getItem({...scope,id:'root'}),evidence=await a.getItem({...scope,id:'evidence'}),ref=r=>({id:r.item.id,revision:r.versionId,source});
+ const target=ref(root),proof=ref(evidence);
+ await a.addAnnotation({scope,id:'decision',kind:'decision',topic:'Alias',text:'decision',target});
+ await a.addAnnotation({scope,id:'correction',kind:'correction',text:'corrected',target,revises:'decision',evidence:proof});
+ await a.addAnnotation({scope,id:'todo',kind:'todo',topic:'Alias',text:'task',target});
+ await a.addAnnotation({scope,id:'completed',kind:'task-state',text:'done',taskRoot:{kind:'annotation',id:'todo'},parents:[],state:'completed',evidenceKind:'source',target,evidence:proof});
+ await a.addAnnotation({scope,id:'unrelated-review',kind:'decision',topic:'Unrelated',text:'elsewhere',target:ref(evidence)});
+ await a.importBatch({scope,source,checkpoint:{previous:1,position:2},items:[{id:'root',kind:'message',text:'later revision',time:'2026-01-01T00:00:00.000000003Z',metadata:{topic:'Native'}}]});
+ const {createQuery}=require('../lib/query.cjs'), snapshot=async archive=>{
+  const q=createQuery(archive), args={...scope,topic:'Alias'};
+  const page=await q.reviewedTimelinePage({...args,limit:2});assert(page.nextCursor);const last=await q.reviewedTimelinePage({...args,limit:2,cursor:page.nextCursor});assert.equal(last.nextCursor,null);
+  return {timeline:await q.reviewedTimeline(args),pages:[...page.rows,...last.rows],bounded:await q.reviewedTimeline({...args,from:'2026-01-01T00:00:00.000000002Z'}),current:await q.current(args),keywordCurrent:await q.current({...args,keyword:'root'})};
+ };
+ const expected=await snapshot(a);
+ assert.deepEqual(expected.timeline.map(x=>x.review_id || x.text),['decision','todo','legacy']);
+ assert.equal(expected.timeline.find(x=>x.review_id==='todo').task_state.state,'completed');
+ assert.equal(expected.timeline.find(x=>x.review_id==='decision').annotations[0].id,'correction');
+ assert.deepEqual(expected.bounded.map(x=>x.text),['legacy']);
+ assert.deepEqual(expected.timeline.find(x=>x.review_id==='decision').annotations[0].evidence,proof);
+ await migrateJsonToSqlite({dir});const sqlite=await openArchive({dir});t.after(()=>sqlite.close?.());
+ assert.deepEqual(await snapshot(sqlite),expected);
+ const store=await openSqlite({dir});t.after(()=>store.close());
+ const selected=store.listItems(scope,{topic:'Alias',reviewOnly:true,reviewedTimeline:true});
+ assert.deepEqual(selected.map(row=>[row.item.id,row.versionId]),[['root',root.versionId],['legacy',(await sqlite.getItem({...scope,id:'legacy'})).versionId]]);
 });

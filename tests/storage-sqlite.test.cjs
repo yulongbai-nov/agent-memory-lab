@@ -162,9 +162,9 @@ test('reviewed history preserves cross-topic aliases, lineage and precise time a
  await a.importBatch({scope:other,source,checkpoint:{position:1},items:[{id:'private',kind:'message',text:'private',metadata:{topic:'Alias',reviewed:true,kind:'decision'}}]});
  const root=await a.getItem({...scope,id:'root'}),evidence=await a.getItem({...scope,id:'evidence'}),ref=r=>({id:r.item.id,revision:r.versionId,source});
  const target=ref(root),proof=ref(evidence);
- await a.addAnnotation({scope,id:'decision',kind:'decision',topic:'Alias',text:'decision',target});
+ await a.addAnnotation({scope,id:'decision',kind:'decision',topic:'Alias',text:'decision',target,valid_time:'2026-01-02T00:00:00Z'});
  await a.addAnnotation({scope,id:'correction',kind:'correction',text:'corrected',target,revises:'decision',evidence:proof});
- await a.addAnnotation({scope,id:'todo',kind:'todo',topic:'Alias',text:'task',target});
+ await a.addAnnotation({scope,id:'todo',kind:'todo',topic:'Alias',text:'task',target,valid_time:'2025-12-31T00:00:00Z'});
  await a.addAnnotation({scope,id:'completed',kind:'task-state',text:'done',taskRoot:{kind:'annotation',id:'todo'},parents:[],state:'completed',evidenceKind:'source',target,evidence:proof});
  await a.addAnnotation({scope,id:'unrelated-review',kind:'decision',topic:'Unrelated',text:'elsewhere',target:ref(evidence)});
  await a.importBatch({scope,source,checkpoint:{previous:1,position:2},items:[{id:'root',kind:'message',text:'later revision',time:'2026-01-01T00:00:00.000000003Z',metadata:{topic:'Native'}}]});
@@ -174,13 +174,32 @@ test('reviewed history preserves cross-topic aliases, lineage and precise time a
   return {timeline:await q.reviewedTimeline(args),pages:[...page.rows,...last.rows],bounded:await q.reviewedTimeline({...args,from:'2026-01-01T00:00:00.000000002Z'}),current:await q.current(args),keywordCurrent:await q.current({...args,keyword:'root'})};
  };
  const expected=await snapshot(a);
- assert.deepEqual(expected.timeline.map(x=>x.review_id || x.text),['decision','todo','legacy']);
+ assert.deepEqual(expected.timeline.map(x=>x.review_id || x.text),['todo','legacy','decision']);
  assert.equal(expected.timeline.find(x=>x.review_id==='todo').task_state.state,'completed');
  assert.equal(expected.timeline.find(x=>x.review_id==='decision').annotations[0].id,'correction');
  assert.deepEqual(expected.bounded.map(x=>x.text),['legacy']);
  assert.deepEqual(expected.timeline.find(x=>x.review_id==='decision').annotations[0].evidence,proof);
+ const checkGraph=async archive=>{
+  const q=createQuery(archive),plain={...scope,topic:'Alias',asOf:'2030-01-01T00:00:00Z'},args={...plain,from:'2026-01-01T00:00:00.000000002Z',to:'2026-01-02T00:00:00Z'};
+  const expectedGraph={all:await q.reviewedTimeline(plain),filtered:await q.reviewedTimeline(args),current:await q.current(plain)};
+  assert.deepEqual(expectedGraph.all.map(x=>x.review_id || x.text),['todo','legacy','decision']);
+  assert.deepEqual(expectedGraph.filtered.map(x=>x.review_id || x.text),['legacy']);
+  assert.equal(expectedGraph.current[0].reason,'ambiguous decisions or change references');
+  const listItems=archive.listItems,listAnnotationsForTargets=archive.listAnnotationsForTargets,counts={items:0,annotations:0};
+  archive.listItems=async (...params)=>{counts.items++;return listItems.apply(archive,params);};
+  archive.listAnnotationsForTargets=async (...params)=>{counts.annotations++;return listAnnotationsForTargets.apply(archive,params);};
+  try {
+   assert.deepEqual(await q.reviewedGraph(args),expectedGraph);
+   assert.deepEqual(counts,{items:1,annotations:1});
+   await assert.rejects(q.reviewedGraph({...args,keyword:'root'}),/keyword/i);
+   await assert.rejects(q.reviewedGraph({...args,from:'2027-01-01',to:'2026-01-01'}),/range/i);
+   await assert.rejects(q.reviewedGraph({...args,from:'invalid'}),/timestamp|date/i);
+  } finally {archive.listItems=listItems;archive.listAnnotationsForTargets=listAnnotationsForTargets;}
+ };
+ await checkGraph(a);
  await migrateJsonToSqlite({dir});const sqlite=await openArchive({dir});t.after(()=>sqlite.close?.());
  assert.deepEqual(await snapshot(sqlite),expected);
+ await checkGraph(sqlite);
  const store=await openSqlite({dir});t.after(()=>store.close());
  const selected=store.listItems(scope,{topic:'Alias',reviewOnly:true,reviewedTimeline:true});
  assert.deepEqual(selected.map(row=>[row.item.id,row.versionId]),[['root',root.versionId],['legacy',(await sqlite.getItem({...scope,id:'legacy'})).versionId]]);

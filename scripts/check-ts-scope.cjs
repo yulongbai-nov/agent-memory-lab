@@ -4,6 +4,8 @@ const { execFileSync } = require("node:child_process");
 const legacyJavaScript = require("./legacy-js-scope.json");
 
 const typescript = [
+  "src/graph-wiki-browser.cts",
+  "src/graph-wiki-view.cts",
   "src/legacy-input-binding.cts",
   "src/query-time.cts",
   "src/bounded-memory-find.cts",
@@ -60,6 +62,8 @@ const lintedJavaScript = [
   "lib/bounded-memory-relay.cjs",
   "lib/local-draft-index.cjs",
   "lib/task-state.cjs",
+  "tests/graph-wiki-view.test.cjs",
+  "tests/graph-wiki-browser.cjs",
   "tests/task-state.test.cjs",
   "tests/task-state-cli.test.cjs",
   "tests/task-state-couch-wire.cjs",

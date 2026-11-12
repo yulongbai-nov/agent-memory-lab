@@ -33,3 +33,7 @@ node bin/memory.cjs serve --dir "$demo_dir" --project demo
 ## 进度去哪看
 
 [当前完成计划](plan.md)记录六项目标的状态、证据、缺口和下一步。[中期验收记录](spec/midpoint-status.md)保留当时的结果和失败。
+
+### Graph + Wiki 首次本地查看
+
+Web 项目入口显示当前决定和未完任务；主题入口按话题查找，选择后显示局部关系图、时间线与精确来源。图仅连接已有的显式变更和带证据的纠正；未知时间的记录留在文本列表。现有查询、Wiki 和归档提供数据，本次增加只读图投影；不提供历史重建或图数据库。图表资源从本机包提供。Cytoscape.js 3.33.1（MIT，[官方文档](https://js.cytoscape.org/)）和 vis-timeline 8.5.0（Apache-2.0 OR MIT，[官方项目](https://github.com/visjs/vis-timeline)）版本固定，采用各自提供的浏览器构建。

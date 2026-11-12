@@ -28,6 +28,8 @@
     "src/versioned-review.cts",
     "src/collector.cts",
     "src/legacy-input-binding.cts",
-    "src/query-time.cts"
+    "src/query-time.cts",
+    "src/graph-wiki-view.cts",
+    "src/graph-wiki-browser.cts"
   ]
 }

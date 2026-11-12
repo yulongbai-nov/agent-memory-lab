@@ -194,6 +194,34 @@ async function main() {
     const replay = watch();
     assert.equal(replay.collector.sessionsAttempted, 0);
     await packedDraftSmoke(installed, collectorArchive);
+    const { createWebServer } = require(
+      join(installed, "lib", "web", "server.cjs"),
+    );
+    const web = createWebServer({
+      archive: {
+        listItems: async () => [],
+        getItem: async () => null,
+        listAnnotations: async () => [],
+      },
+      owner: "fixture",
+      project: "fixture",
+    });
+    try {
+      const { port } = await web.listen();
+      for (const asset of [
+        "/assets/cytoscape.js",
+        "/assets/vis.js",
+        "/assets/vis.css",
+        "/graph-wiki.css",
+        "/graph-wiki.js",
+      ]) {
+        const response = await fetch(`http://127.0.0.1:${port}${asset}`);
+        assert.equal(response.status, 200, asset);
+        assert.ok((await response.text()).length > 50, asset);
+      }
+    } finally {
+      await web.close();
+    }
     assert.equal(replay.collector.itemsImported, 0);
 
     const helper = await fs.lstat(join(installed, "lib", "nocache-hash.py"));

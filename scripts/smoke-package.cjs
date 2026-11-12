@@ -54,7 +54,7 @@ async function packedDraftSmoke(installed, dir) {
           kind: "message",
           role: "user",
           text: quote,
-          metadata: { original },
+          metadata: { coordinate: 1, original },
         },
       ],
     });
@@ -63,6 +63,31 @@ async function packedDraftSmoke(installed, dir) {
     archive.close?.();
   }
   assert.ok(row);
+  const inventory = JSON.parse(
+    run(process.execPath, [
+      join(installed, "bin", "memory.cjs"),
+      "original-coverage",
+      "--dir",
+      dir,
+      "--owner",
+      scope.owner,
+      "--project",
+      scope.project,
+      "--source",
+      source.harness,
+      "--instance",
+      source.instance,
+      "--session",
+      source.session,
+      "--first-coordinate",
+      "1",
+      "--last-coordinate",
+      "1",
+    ]),
+  );
+  assert.deepEqual(inventory.rows, [
+    { coordinate: 1, status: "metadata-present", versions: 1 },
+  ]);
   const [choice] = await verifiedProjections(
     dir,
     row,

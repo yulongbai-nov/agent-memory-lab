@@ -7,7 +7,7 @@ const { randomUUID } = require('node:crypto');
 
 const options = Object.fromEntries([
   'split', 'dir', 'owner', 'project', 'keyword', 'from', 'to', 'limit', 'id', 'revision', 'format', 'receipt', 'receipt-sha256', 'expect-latest', 'review-id', 'primary',
-  'source', 'file', 'instance', 'session', 'max-records', 'batch-size', 'port',
+  'source', 'file', 'instance', 'session', 'max-records', 'batch-size', 'port', 'first-coordinate', 'last-coordinate', 'expect-snapshot',
   'kind', 'text', 'manifest', 'target', 'evidence', 'task-root', 'parents', 'state', 'evidence-kind', 'occurred-at', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time', 'serve-origin', 'serve-tailnet-user'
 ].map(name => [name, { type: 'string' }]));
 options.synthetic = { type: 'boolean' };
@@ -31,6 +31,8 @@ Commands:
   current --topic TOPIC
   evidence --id ID --revision VERSION --source dsh|codex --instance INSTANCE --session SESSION
   verify-original --id ID --revision VERSION
+  original-coverage --source dsh|codex --instance ARCHIVED_INSTANCE --session ARCHIVED_SESSION
+                    --first-coordinate N --last-coordinate N [--expect-snapshot SHA256]
   repair-original --manifest PRIVATE_JSON --id ID --revision VERSION
   coverage
   migrate-index
@@ -171,7 +173,7 @@ async function main() {
   }
   if (values.preview && command !== 'find') throw new Error('--preview is supported only by local find.');
   const { operations } = require('../lib/operations.cjs');
-  const readCommands = ['find', 'timeline', 'current', 'evidence', 'coverage', 'verify-original', 'semantic-status', 'task-list'];
+  const readCommands = ['find', 'timeline', 'current', 'evidence', 'coverage', 'verify-original', 'original-coverage', 'semantic-status', 'task-list'];
   const readOnly = readCommands.includes(command) || (command === 'mcp' && !values['allow-annotations']);
   const op = await operations({ ...values, readOnly });
   const selection = { ...values, limit: positiveInt(values.limit, command==='task-list'?10000:100), offset: command==='task-list'?nonnegativeInt(values.offset,10000):positiveInt(values.offset,10000), harness: values.source };
@@ -197,6 +199,26 @@ async function main() {
       const evidence = await op.evidence(selection);
       const { verifyOriginal } = require('../lib/originals.cjs');
       result = await verifyOriginal(op.archive.dir, evidence.original);
+      break;
+    }
+    case 'original-coverage': {
+      const allowed=['dir','owner','project','source','instance','session','first-coordinate','last-coordinate','expect-snapshot'];
+      if (Object.keys(values).some(key=>!allowed.includes(key)) || !['codex','dsh'].includes(values.source) || !selection.source)
+        throw Error('Invalid original coverage options');
+      const first=positiveInt(values['first-coordinate'],Number.MAX_SAFE_INTEGER);
+      const last=positiveInt(values['last-coordinate'],Number.MAX_SAFE_INTEGER);
+      const {auditOriginalCoverage}=require('../lib/generated/original-coverage.cjs');
+      const {isArchivedOriginalReference,originalAvailability}=require('../lib/originals.cjs');
+      try {
+        const data=await op.archive.originalCoverageInputs(op.scope,selection.source,first,last);
+        result=await auditOriginalCoverage(first,last,values['expect-snapshot'],data,isArchivedOriginalReference,ref=>originalAvailability(op.archive.dir,ref));
+      } catch (error) {
+        // Known audit failures are actionable and contain no input data.
+        if (!['Stale coverage snapshot','Checkpoint required','Invalid coverage window','Invalid coverage snapshot','Original coverage input limit exceeded'].includes(error.message)) throw error;
+        console.error(error.message);
+        process.exitCode=1;
+        return;
+      }
       break;
     }
     case 'coverage': result = await op.coverage(); break;

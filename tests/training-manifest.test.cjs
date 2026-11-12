@@ -275,3 +275,193 @@ test("synthetic CLI is deterministic and refuses arbitrary input", () => {
     );
   }
 });
+
+function digest(value) {
+  return `sha256:${require("node:crypto").createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
+
+function refKey(ref) {
+  return JSON.stringify([
+    ref.owner,
+    ref.project,
+    ref.harness,
+    ref.instance,
+    ref.session,
+    ref.entry,
+    ref.revision,
+  ]);
+}
+
+test("CLI split exports contain only their authorized sessions and preserve exact evidence", () => {
+  const fullResult = cli("--synthetic");
+  assert.equal(fullResult.status, 0, fullResult.stderr);
+  const fullBytes = fullResult.stdout;
+  const { manifest } = JSON.parse(fullBytes);
+  const exports = {};
+  for (const split of ["train", "test"]) {
+    const first = cli("--synthetic", "--split", split);
+    const second = cli("--synthetic", "--split", split);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(first.stdout, second.stdout);
+    const output = JSON.parse(first.stdout);
+    exports[split] = output;
+    assert.deepEqual(Object.keys(output).sort(), [
+      "contentHash",
+      "evidenceRegistry",
+      "samples",
+      "sourceManifestHash",
+      "split",
+      "version",
+    ]);
+    assert.equal(output.version, "training-split-v1");
+    assert.equal(output.split, split);
+    assert.equal(output.sourceManifestHash, manifest.contentHash);
+    const { contentHash, ...body } = output;
+    assert.equal(contentHash, digest(body));
+    const selected = manifest.samples.filter(
+      (sample) => sample.split === split,
+    );
+    assert.deepEqual(
+      output.samples.map((sample) => sample.id),
+      selected.map((sample) => sample.id),
+    );
+    const used = new Set(
+      selected.flatMap((sample) => sample.evidence.map(refKey)),
+    );
+    const expectedRegistry = manifest.registry.filter((entry) =>
+      used.has(refKey(entry)),
+    );
+    assert.deepEqual(
+      output.evidenceRegistry.map((entry) => refKey(entry.ref)),
+      expectedRegistry.map(refKey),
+    );
+    for (const entry of output.evidenceRegistry) {
+      const parent = expectedRegistry.find(
+        (item) => refKey(item) === refKey(entry.ref),
+      );
+      const grant = manifest.grants.find(
+        (item) =>
+          refKey(item) === refKey(entry.ref) &&
+          item.purpose === (split === "train" ? "training" : "evaluation"),
+      );
+      assert.equal(entry.contentHash, parent.contentHash);
+      assert.equal(entry.authorizationId, grant.authorizationId);
+      assert.equal(entry.purpose, grant.purpose);
+      assert.equal(entry.sourceSessionId, parent.sourceSessionId);
+      assert.deepEqual(Object.keys(entry).sort(), [
+        "authorizationId",
+        "contentHash",
+        "purpose",
+        "ref",
+        ...(parent.sourceSessionId ? ["sourceSessionId"] : []),
+      ]);
+    }
+    for (const sample of output.samples) {
+      const parent = selected.find((item) => item.id === sample.id);
+      assert.deepEqual(Object.keys(sample).sort(), ["expected", "id", "input"]);
+      assert.deepEqual(Object.keys(sample.input).sort(), ["evidence", "query"]);
+      assert.deepEqual(
+        Object.keys(sample.expected).sort(),
+        [
+          "answer",
+          "labels",
+          ...(parent.observedTime ? ["observedTime"] : []),
+          ...(parent.validTime ? ["validTime"] : []),
+        ].sort(),
+      );
+      assert.equal(sample.input.query, parent.query);
+      assert.equal(sample.expected.answer, parent.expected);
+      assert.deepEqual(sample.expected.labels, parent.labels);
+      for (const field of ["validTime", "observedTime"])
+        assert.equal(sample.expected[field], parent[field]);
+      assert.deepEqual(
+        sample.input.evidence.map((entry) => refKey(entry.ref)),
+        parent.evidence.map(refKey),
+      );
+      for (const evidence of sample.input.evidence) {
+        assert.deepEqual(Object.keys(evidence).sort(), ["excerpt", "ref"]);
+        assert.equal(
+          evidence.excerpt,
+          expectedRegistry.find(
+            (entry) => refKey(entry) === refKey(evidence.ref),
+          ).excerpt,
+        );
+      }
+      assert.equal(Object.hasOwn(sample.input, "expected"), false);
+      assert.equal(Object.hasOwn(sample.input, "answer"), false);
+    }
+  }
+  const sessions = (output) =>
+    new Set(
+      output.evidenceRegistry.map(({ ref }) =>
+        JSON.stringify([ref.harness, ref.instance, ref.session]),
+      ),
+    );
+  const trainSessions = sessions(exports.train);
+  for (const session of sessions(exports.test))
+    assert.equal(trainSessions.has(session), false);
+  const old = exports.test.samples
+    .find((sample) => sample.id === "graph-correction-change")
+    .input.evidence.find(({ ref }) => ref.entry === "route-tuesday");
+  assert.equal(old.excerpt, "The blue lantern route is Tuesday.");
+  assert.equal(
+    old.ref.revision,
+    manifest.registry.find((entry) => entry.entry === "route-tuesday").revision,
+  );
+  assert.equal(cli("--synthetic").stdout, fullBytes);
+});
+
+test("split export rejects a tampered parent and wrong CLI flags", () => {
+  const {
+    exportTrainingSplit,
+  } = require("../lib/generated/training-split.cjs");
+  const { manifest } = JSON.parse(cli("--synthetic").stdout);
+  const input = structuredClone(manifest);
+  delete input.version;
+  delete input.contentHash;
+  input.registry[0].sourceSessionId = "verified-synthetic-session";
+  const parent = buildTrainingManifest(input);
+  const ref = parent.registry[0];
+  const split = parent.samples.find((sample) =>
+    sample.evidence.some((evidence) => refKey(evidence) === refKey(ref)),
+  ).split;
+  const exported = exportTrainingSplit(parent, split);
+  assert.equal(
+    exported.evidenceRegistry.find((entry) => refKey(entry.ref) === refKey(ref))
+      .sourceSessionId,
+    "verified-synthetic-session",
+  );
+  for (const mutate of [
+    (value) => {
+      value.samples[0].expected += " tampered";
+    },
+    (value) => {
+      value.registry[0].excerpt += " tampered";
+    },
+    (value) => {
+      value.contentHash = `sha256:${"0".repeat(64)}`;
+    },
+  ]) {
+    const changed = structuredClone(manifest);
+    mutate(changed);
+    assert.throws(() => exportTrainingSplit(changed, "train"));
+  }
+  for (const args of [
+    ["--split", "train"],
+    ["--synthetic", "--split", "invalid"],
+    ["--synthetic", "--split"],
+    ["--synthetic", "--split", "train", "--unknown"],
+    ["--synthetic", "--split", "train", "--split", "test"],
+  ])
+    assert.notEqual(
+      cli(...args).status,
+      0,
+      `must reject ${JSON.stringify(args)}`,
+    );
+  const other = spawnSync(
+    process.execPath,
+    [path.join(root, "bin/memory.cjs"), "status", "--split", "train"],
+    { cwd: root, encoding: "utf8", timeout: 10000 },
+  );
+  assert.notEqual(other.status, 0);
+});

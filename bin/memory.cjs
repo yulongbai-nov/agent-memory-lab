@@ -6,7 +6,7 @@ const { readFile } = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
 
 const options = Object.fromEntries([
-  'dir', 'owner', 'project', 'keyword', 'from', 'to', 'limit', 'id', 'revision', 'format', 'receipt', 'receipt-sha256', 'expect-latest', 'review-id', 'primary',
+  'split', 'dir', 'owner', 'project', 'keyword', 'from', 'to', 'limit', 'id', 'revision', 'format', 'receipt', 'receipt-sha256', 'expect-latest', 'review-id', 'primary',
   'source', 'file', 'instance', 'session', 'max-records', 'batch-size', 'port',
   'kind', 'text', 'manifest', 'target', 'evidence', 'task-root', 'parents', 'state', 'evidence-kind', 'occurred-at', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time', 'serve-origin', 'serve-tailnet-user'
 ].map(name => [name, { type: 'string' }]));
@@ -20,7 +20,7 @@ options['allow-annotations'] = { type: 'boolean' };
 function usage() {
   console.log(`Usage: memory <command> --project PROJECT [--dir PRIVATE_DIRECTORY]
 Commands:
-  training-manifest --synthetic
+  training-manifest --synthetic [--split train|test]
   ingest --source dsh|codex|chatgpt --file FILE --instance INSTANCE --session SESSION
          [--max-records N] [--batch-size N]
   ingest-tree --source dsh|codex --root DIRECTORY --instance INSTANCE [--max-sessions N] [--offset N]
@@ -108,17 +108,21 @@ async function ingestTree(op, values) {
 }
 
 async function main() {
-  const { values, positionals } = parseArgs({ options, allowPositionals: true });
+  const { values, positionals, tokens } = parseArgs({ options, allowPositionals: true, tokens: true });
   const [command, ...extra] = positionals;
   if (values.help || !command) return usage();
   if (extra.length) throw new Error('Unexpected positional argument.');
   if (command === 'training-manifest') {
-    if (values.synthetic !== true || Object.keys(values).length !== 1) throw new Error('Invalid synthetic manifest input');
-    const result = require('../lib/generated/synthetic-training-manifest.cjs').buildSyntheticTrainingManifest();
+    if (values.synthetic !== true || tokens.filter(token => token.kind === 'option' && token.name === 'synthetic').length !== 1 ||
+        tokens.filter(token => token.kind === 'option' && token.name === 'split').length > 1 ||
+        Object.keys(values).some(key => !['synthetic', 'split'].includes(key)) ||
+        (values.split !== undefined && !['train', 'test'].includes(values.split))) throw new Error('Invalid synthetic manifest input');
+    const envelope = require('../lib/generated/synthetic-training-manifest.cjs').buildSyntheticTrainingManifest();
+    const result = values.split === undefined ? envelope : require('../lib/generated/training-split.cjs').exportTrainingSplit(envelope.manifest, values.split);
     console.log(JSON.stringify(result, null, 2));
     return;
   }
-  if (values.synthetic !== undefined) throw new Error('Invalid synthetic manifest input');
+  if (values.synthetic !== undefined || values.split !== undefined) throw new Error('Invalid synthetic manifest input');
   if(['draft-publish','draft-review','draft-review-show'].includes(command) || (['draft-list','draft-show'].includes(command) && values.format==='v2')) {
     const allow={ 'draft-publish':['dir','owner','project','receipt','receipt-sha256','expect-latest'], 'draft-review':['dir','owner','project','id','basis','text','topic','primary'], 'draft-review-show':['dir','owner','project','review-id'], 'draft-list':['dir','owner','project','format'], 'draft-show':['dir','owner','project','format','id'] }[command];
     if(!values.dir||!values.owner||!values.project||Object.keys(values).some(k=>!allow.includes(k)))throw Error('Invalid versioned draft input');

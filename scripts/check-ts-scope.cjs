@@ -5,6 +5,8 @@ const legacyJavaScript = require("./legacy-js-scope.json");
 
 const typescript = [
   "src/reviewed-page.cts",
+  "src/training-manifest.cts",
+  "src/synthetic-training-manifest.cts",
   "src/graph-wiki-browser.cts",
   "src/graph-wiki-view.cts",
   "src/legacy-input-binding.cts",
@@ -71,6 +73,7 @@ const lintedJavaScript = [
   "tests/graph-wiki-view.test.cjs",
   "tests/graph-wiki-browser.cjs",
   "tests/graph-wiki-pagination.cjs",
+  "tests/training-manifest.test.cjs",
   "tests/task-state.test.cjs",
   "tests/task-state-cli.test.cjs",
   "tests/task-state-couch-wire.cjs",

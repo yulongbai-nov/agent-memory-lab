@@ -11,4 +11,5 @@
 | 草稿生成、读取和人工审核 | [恢复](local-draft-recovery.md)、[资源准入](local-admission-wait.md)、[模型哈希](local-nocache-hash.md)、[候选契约](candidate-contract-v2.md)、[v1 读取](local-draft-read.md)、[v2 读审](local-draft-review-v2.md) |
 | 图谱、同步与扩展 | [Graph + Wiki 设计与研究](graph-wiki-design.md)、[查询契约](graph-wiki-contract-v0.1.md)、[本体投影](ontology-projection-v0.1.md)、[框架复用评估](research/ontosmith-reuse.md)、[CouchDB 实验](../benchmark/couchdb-sync/README.md)、[手机接入](mobile-access.md) |
 | 工程与验证 | [工程规范](engineering-quality.md)、[仓库协作入口](../AGENTS.md)、[双 CLI 回放](../benchmark/harness-e2e/README.md)、[检索对照](../benchmark/memory-views/README.md)、[Luna Writer 对照](../benchmark/writer-luna/README.md) |
+| 训练与评测数据 | [样本清单及用途授权](training-manifest-v1.md) |
 | 既往证据 | [中期验收历史快照](midpoint-status.md) |

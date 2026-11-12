@@ -142,6 +142,16 @@ async function main() {
     ]);
     const installed = join(prefix, "node_modules", "agent-memory-lab");
     assert.equal(existsSync(join(prefix, "node_modules", "typescript")), false);
+    const training = JSON.parse(
+      run(process.execPath, [
+        join(installed, "bin", "memory.cjs"),
+        "training-manifest",
+        "--synthetic",
+      ]),
+    ).manifest;
+    assert.equal(training.version, "training-manifest-v1");
+    assert.ok(training.samples.some((sample) => sample.split === "train"));
+    assert.ok(training.samples.some((sample) => sample.split === "test"));
     const source = join(work, "collector-source");
     const collectorArchive = join(work, "collector-archive");
     const manifest = join(work, "collector-manifest.json");

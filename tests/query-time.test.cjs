@@ -239,3 +239,83 @@ test("browser local day boundaries honor DST and skipped midnight", async () => 
   }
   assert.match(server, /resolvedOptions\(\)\.timeZone/);
 });
+
+test("current respects sub-millisecond effective times and backwards changes", async () => {
+  const scope = { owner: "synthetic", project: "clock", topic: "T" };
+  const decision = (id, valid_time, kind, revises = []) => ({
+    id,
+    revision: id,
+    text: id,
+    valid_time,
+    metadata: { topic: "T", reviewed: true, kind, basis: "confirmed", revises },
+  });
+  let records = [
+    decision("old", "2026-01-01T00:00:00.123100Z", "decision"),
+    decision("new", "2026-01-01T00:00:00.123900Z", "change", ["old"]),
+  ];
+  const query = createQuery({
+    listItems: async () => records,
+    getItem: async () => null,
+    listAnnotations: async () => [],
+  });
+  assert.equal(
+    (await query.current({ ...scope, asOf: "2026-01-01T00:00:00.123500Z" }))[0]
+      .text,
+    "old",
+  );
+  assert.equal(
+    (
+      await query.current({
+        ...scope,
+        asOf: "2026-01-01T01:00:00.123900+01:00",
+      })
+    )[0].text,
+    "new",
+  );
+  records = [
+    decision("old", "2026-01-01T00:00:00.123900Z", "decision"),
+    decision("new", "2026-01-01T00:00:00.123100Z", "change", ["old"]),
+  ];
+  assert.equal(
+    (await query.current({ ...scope, asOf: "2026-01-01T00:00:01Z" }))[0].label,
+    "待核实",
+  );
+  records = [
+    decision("legacy", "2026-01-01", "decision"),
+    decision("bad", "invalid", "decision"),
+  ];
+  assert.equal(
+    (await query.current({ ...scope, asOf: "2026-01-02" }))[0].text,
+    "legacy",
+  );
+  assert.deepEqual(await query.current({ ...scope, asOf: "invalid" }), []);
+  records.push(
+    decision("next", "2026-01-01T00:00:00.000000001Z", "change", ["legacy"]),
+  );
+  assert.equal(
+    (await query.current({ ...scope, asOf: "2026-01-01" }))[0].text,
+    "legacy",
+  );
+});
+
+test("decision boundaries deduplicate equivalent offsets without collapsing fractional instants", () => {
+  const { decisionBoundaries } = require("../lib/query.cjs");
+  const record = (id, valid_time) => ({
+    id,
+    revision: id,
+    valid_time,
+    metadata: { reviewed: true, kind: "decision", topic: "T" },
+  });
+  const boundaries = decisionBoundaries(
+    [
+      record("a", "2026-01-01T00:00:00.123100Z"),
+      record("b", "2026-01-01T01:00:00.123100000+01:00"),
+      record("c", "2026-01-01T00:00:00.123900Z"),
+    ],
+    [],
+  );
+  assert.deepEqual(
+    boundaries.map((time) => time.iso),
+    ["2026-01-01T00:00:00.1231Z", "2026-01-01T00:00:00.1239Z"],
+  );
+});

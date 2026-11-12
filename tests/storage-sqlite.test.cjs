@@ -86,3 +86,31 @@ test('local draft pages use a fixed insertion fence without returning other scop
  assert.deepEqual(await ro.localDraftPage(scope,second.at(-1).seq,fence,2),[]);const nextFence=await ro.localDraftFence(scope);assert.equal((await ro.localDraftPage(scope,fence,nextFence,2))[0].record.item.id,'new');
  await assert.rejects(ro.localDraftPage(scope,0,nextFence,101),/Invalid local draft page/);ro.close?.();
 });
+
+test('topic source pages preserve scope, revisions, cursor binding and append fence',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'topic-page-')); t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const scope={owner:'o',project:'p'},source={harness:'h',instance:'i',session:'s'},a=await openArchive({dir});
+ await a.importBatch({scope,source,checkpoint:{position:1},items:Array.from({length:5},(_,i)=>({id:'item'+i,kind:'message',text:'private '+i,time:`2026-01-0${i+1}T00:00:00Z`,metadata:{topic:'T'}}))});
+ const firstRecord=await a.getItem({...scope,id:'item0'});
+ await a.addAnnotation({scope,id:'decision',kind:'decision',text:'reviewed',topic:'T',target:{id:firstRecord.item.id,revision:firstRecord.versionId,source}});
+ const {createQuery}=require('../lib/query.cjs');
+ for (const backend of ['json','sqlite']) {
+  if(backend==='sqlite') await migrateJsonToSqlite({dir});
+  const archive=await openArchive({dir}); t.after(()=>archive.close?.()); const query=createQuery(archive);
+  const first=await query.topicSources({...scope,topic:'T',limit:2}); assert.equal(first.rows.length,2);assert(first.nextCursor);assert(!JSON.stringify(first).includes('private'));
+  await assert.rejects(query.topicSources({...scope,topic:'other',limit:2,cursor:first.nextCursor}),/cursor/);
+  const second=await query.topicSources({...scope,topic:'T',limit:2,cursor:first.nextCursor});
+  const third=await query.topicSources({...scope,topic:'T',limit:2,cursor:second.nextCursor});
+  assert.equal(third.rows.length,1);assert.equal(third.nextCursor,null);
+  const refs=[...first.rows,...second.rows,...third.rows].map(r=>r.citation.revision);assert.equal(new Set(refs).size,5);
+  assert.deepEqual(await query.topicSources({...scope,topic:'T',from:'2026-02-01'}),{rows:[],nextCursor:null});
+  const reviewed=await query.reviewedTimeline({...scope,topic:'T'});assert.deepEqual(reviewed,(await query.timeline({...scope,topic:'T'})).filter(r=>r.kind!=='source'));
+  if(backend==='sqlite') {
+   const {DatabaseSync}=require('node:sqlite'), inspect=new DatabaseSync(path.join(dir,'archive.sqlite3'),{readOnly:true});
+   const plan=inspect.prepare('EXPLAIN QUERY PLAN SELECT seq FROM versions INDEXED BY version_scope_topic WHERE owner=? AND project=? AND topic=? AND seq>? AND seq<=? ORDER BY seq LIMIT ?').all('o','p','T',0,100,3).map(r=>r.detail).join(' '); inspect.close();
+   assert.match(plan,/version_scope_topic/); assert.doesNotMatch(plan,/TEMP B-TREE/);
+   await archive.importBatch({scope,source,checkpoint:{previous:1,position:2},items:[{id:'new',kind:'message',text:'later',metadata:{topic:'T'}}]});
+   const rest=await query.topicSources({...scope,topic:'T',limit:50,cursor:first.nextCursor});assert.equal(rest.rows.length,3);
+  }
+ }
+});

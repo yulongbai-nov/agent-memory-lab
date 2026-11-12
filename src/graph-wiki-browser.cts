@@ -99,12 +99,21 @@ function parseView(value: unknown): View {
   };
 }
 let graph: Graph | undefined, timeline: Timeline | undefined;
+function clearGraph(): void {
+  graph?.destroy();
+  timeline?.destroy();
+  graph = undefined;
+  timeline = undefined;
+  element("#graph-coverage").textContent = "";
+}
 async function showGraph(
   params: string,
   openEvidence: (citation: Citation) => Promise<void>,
   onError: (error: unknown) => void,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   const view = parseView(await request("/api/graph?" + params));
+  if (!isCurrent()) return;
   const byId = new Map(view.rows.map((row) => [row.id, row]));
   graph?.destroy();
   timeline?.destroy();
@@ -244,6 +253,10 @@ function setup(onError: (error: unknown) => void): void {
 }
 (
   globalThis as typeof globalThis & {
-    graphWiki: { setup: typeof setup; showGraph: typeof showGraph };
+    graphWiki: {
+      setup: typeof setup;
+      showGraph: typeof showGraph;
+      clearGraph: typeof clearGraph;
+    };
   }
-).graphWiki = { setup, showGraph };
+).graphWiki = { setup, showGraph, clearGraph };

@@ -95,14 +95,26 @@ async function main() {
       true,
     );
 
+    // The pinned Cytoscape build stores the current core in the container.
+    // Use it for render readiness and coordinates, then click with Playwright.
     async function selectFrom(entry) {
       await entry.click();
       await page.locator('#search input[name="keyword"]').fill("blue lantern");
       await page.locator("#search button").click();
+      await page.locator("#graph").evaluate((container) => {
+        container.previousGraph = container._cyreg?.cy;
+      });
       await page
         .locator("#topics")
         .getByRole("button", { name: /Moonbridge lantern route/ })
         .click();
+      await page.waitForFunction(() => {
+        const container = document.querySelector("#graph");
+        return (
+          container._cyreg?.cy &&
+          container._cyreg.cy !== container.previousGraph
+        );
+      });
       await page.waitForFunction(() =>
         document
           .querySelector("#current")
@@ -184,6 +196,44 @@ async function main() {
     const projectCurrent = await selectFrom(project);
     const topicCurrent = await selectFrom(topic);
     assert.equal(topicCurrent, projectCurrent);
+
+    // Click the rendered decision node to open its archived source.
+    await page.locator("#graph").scrollIntoViewIfNeeded();
+    await page.locator("#graph canvas").first().screenshot();
+    const graphNode = await page.locator("#graph").evaluate((container) => {
+      const node = container._cyreg.cy.getElementById("route-decision");
+      if (node.empty()) throw new Error("Expected decision graph node");
+      const position = node.renderedPosition();
+      const bounds = container.getBoundingClientRect();
+      return { x: bounds.left + position.x, y: bounds.top + position.y };
+    });
+    const graphEvidenceResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/evidence" &&
+        response.request().method() === "GET",
+    );
+    await page.mouse.click(graphNode.x, graphNode.y);
+    const graphResponse = await graphEvidenceResponse;
+    assert.equal(graphResponse.status(), 200);
+    assert.deepEqual(
+      JSON.parse(new URL(graphResponse.url()).searchParams.get("citation")),
+      {
+        id: scenario.references.original.id,
+        revision: scenario.references.original.revision,
+        source: scenario.references.original.source,
+      },
+    );
+    await page.waitForFunction(() =>
+      document.querySelector("#evidence").textContent.includes("route-tuesday"),
+    );
+    const graphEvidence = JSON.parse(
+      await page.locator("#evidence").innerText(),
+    );
+    assert.equal(graphEvidence.id, scenario.references.original.id);
+    assert.equal(graphEvidence.revision, scenario.references.original.revision);
+    assert.deepEqual(graphEvidence.source, scenario.references.original.source);
+    assert.equal(graphEvidence.turnId, "dsh-turn-1");
+    assert.equal(graphEvidence.original.availability, "archived");
 
     // Current lifecycle is independent of task state in the same visual view.
     const oldDecision = page

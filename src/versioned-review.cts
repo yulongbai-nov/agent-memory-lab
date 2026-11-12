@@ -88,7 +88,11 @@ async function readPrivate(file: string, limit = max) {
     if (
       st.dev !== before.dev ||
       st.ino !== before.ino ||
-      st.size !== before.size
+      st.size !== before.size ||
+      st.mtimeMs !== before.mtimeMs ||
+      st.ctimeMs !== before.ctimeMs ||
+      st.mode & 0o077 ||
+      (typeof process.getuid === "function" && st.uid !== process.getuid())
     )
       throw Error("File changed");
     const buffer = Buffer.alloc(st.size + 1);
@@ -107,7 +111,10 @@ async function readPrivate(file: string, limit = max) {
     if (
       length !== st.size ||
       after.size !== st.size ||
-      after.mtimeMs !== st.mtimeMs
+      after.mtimeMs !== st.mtimeMs ||
+      after.ctimeMs !== st.ctimeMs ||
+      after.mode & 0o077 ||
+      (typeof process.getuid === "function" && after.uid !== process.getuid())
     )
       throw Error("File changed");
     return buffer.subarray(0, length);

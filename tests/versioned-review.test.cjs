@@ -371,6 +371,37 @@ test("versioned candidates publish and explicit decision/todo reviews retain lin
   );
   assert.equal("originalSpan" in detail.candidate.evidence[0], false);
   await fs.rename(original + ".saved", original);
+  const { DatabaseSync } = require("node:sqlite"),
+    db = new DatabaseSync(join(f.dir, "archive.sqlite3")),
+    identity = JSON.stringify([scope.owner, scope.project, decision.output.id]),
+    saved = db
+      .prepare("SELECT data FROM annotations WHERE identity=?")
+      .get(identity).data,
+    tampered = JSON.parse(saved);
+  tampered.candidateReview.primary = 2;
+  db.prepare("UPDATE annotations SET data=? WHERE identity=?").run(
+    JSON.stringify(tampered),
+    identity,
+  );
+  db.close();
+  const invalid = spawnSync(
+    process.execPath,
+    [
+      join(__dirname, "../bin/memory.cjs"),
+      "draft-review-show",
+      "--dir",
+      f.dir,
+      "--owner",
+      scope.owner,
+      "--project",
+      scope.project,
+      "--review-id",
+      decision.output.id,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.notEqual(invalid.status, 0);
+  assert.equal(invalid.stdout, "");
 });
 
 test("versioned declared full projection accepts long repeated source text by exact offsets", async (t) => {

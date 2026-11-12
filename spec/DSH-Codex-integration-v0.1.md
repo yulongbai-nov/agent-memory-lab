@@ -2,6 +2,10 @@
 
 两端共用查询与复核 Skill，实际数据访问通过限定项目范围的 stdio MCP 完成。隔离 Linux 中的真实 Codex 和 DSH CLI 已通过合成协议回放，各自查找话题、读取当前决定和时间线并核对两条不同版本证据。宿主桌面自动发现、原生深链和手机端另行验收。独立适配器读取源，定时任务有界摄取，CouchDB 用于按项目同步。真实会话、工具轨迹、附件与索引留在私有运行环境。[运行与验证矩阵](engineering-quality.md)
 
+macOS 上安装的 Codex CLI 0.165.0 已用 App Server 检查单个已注册合成绑定，得到五个只读工具。一个当前 Codex 会话使用该入口完成查找、时间线、当前决定和两条精确引用回查。两个归档版本均有可核查的来源和轮次，原件状态为 `source-only`。 [Codex App Server](https://learn.chatgpt.com/docs/app-server)
+
+macOS 上安装的 DSH CLI 0.2.2-rc.1 已在临时配置和本机模拟提供方下完成有界合成回放，核对查找、时间线和证据调用。可重复的公开验收仍使用固定版本容器。DSH 桌面会话加载、其他 Codex 会话的注册刷新，以及真实授权范围内的模型调用分别验收。 [双端回放](../benchmark/harness-e2e/README.md)
+
 ## 数据和来源
 
 | 粒度 | 含义 |

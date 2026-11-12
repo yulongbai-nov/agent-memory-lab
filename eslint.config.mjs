@@ -6,6 +6,7 @@ export default defineConfig([
   { ignores: ["node_modules/**", "lib/generated/**"] },
   {
     files: [
+      "src/legacy-input-binding.cts",
       "src/query-time.cts",
       "src/bounded-memory-find.cts",
       "src/bounded-memory-read.cts",

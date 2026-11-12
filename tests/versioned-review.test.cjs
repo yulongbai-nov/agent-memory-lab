@@ -800,3 +800,192 @@ test("empty candidate receipt drops unused input projections", async (t) => {
     snapshot = JSON.parse(await fs.readFile(snapshotFile, "utf8"));
   assert.deepEqual(snapshot.inputProjections, []);
 });
+
+test("v2 verifies only corroborated input in a legacy Codex wrapper", async (t) => {
+  const dir = await fs.mkdtemp(join(tmpdir(), "legacy-declared-review-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const {
+    previewDeclaredProjection,
+    verifyDeclaredProjection,
+  } = require("../lib/local-derive-projection.cjs");
+  const capture = originalCapture(dir);
+  const input = "合成决定保留两个检查步骤 🐦。";
+  const context = "Context must never become a candidate quote.";
+  const wrapper = (userLine) =>
+    `<realtime_delegation><input>${input}</input>` +
+    `<transcript_delta>assistant: ${context}\n${userLine}` +
+    `</transcript_delta></realtime_delegation>`;
+  async function fixture(
+    text,
+    role = "user",
+    content = [{ type: "input_text", text }],
+    rawRole = role,
+  ) {
+    const original = await capture({
+      coordinate: 1,
+      bytes: Buffer.from(
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: rawRole,
+            content,
+          },
+        }),
+      ),
+    });
+    return {
+      source: { harness: "codex" },
+      item: {
+        kind: "message",
+        role,
+        text,
+        metadata: { recordType: "response_item:message", original },
+      },
+    };
+  }
+  function span(row, quote) {
+    const { text, metadata } = row.item;
+    const start = text.indexOf(quote);
+    const end = start + quote.length;
+    return {
+      kind: "relay-input",
+      fieldPath: "payload.content.0.text",
+      originalSha256: metadata.original.sha256,
+      startUtf16: start,
+      endUtf16: end,
+      startUtf8: Buffer.byteLength(text.slice(0, start)),
+      endUtf8: Buffer.byteLength(text.slice(0, end)),
+      previewStartUtf16: start,
+      previewEndUtf16: end,
+    };
+  }
+  const valid = await fixture(wrapper(`user: ${input}`));
+  const selected = span(valid, input);
+  assert.equal(previewDeclaredProjection(valid, selected), input);
+  assert.deepEqual(await verifyDeclaredProjection(dir, valid, selected), {
+    status: "verified",
+    text: input,
+  });
+  const rawText = valid.item.text;
+  for (const selectedPart of [
+    { type: "output_text", text: rawText },
+    { type: "text", text: rawText },
+    { text: rawText },
+    rawText,
+  ]) {
+    const bad = await fixture(rawText, "user", [
+      selectedPart,
+      { type: "input_text", text: "unrelated" },
+    ]);
+    assert.deepEqual(
+      await verifyDeclaredProjection(dir, bad, span(bad, input)),
+      { status: "integrity-failed" },
+    );
+  }
+  const duplicate = await fixture(rawText, "user", [
+    { type: "input_text", text: rawText },
+    { type: "input_text", text: "unrelated" },
+  ]);
+  assert.deepEqual(
+    await verifyDeclaredProjection(dir, duplicate, span(duplicate, input)),
+    { status: "integrity-failed" },
+  );
+  const wrongRole = await fixture(
+    rawText,
+    "user",
+    [{ type: "input_text", text: rawText }],
+    "assistant",
+  );
+  assert.deepEqual(
+    await verifyDeclaredProjection(dir, wrongRole, span(wrongRole, input)),
+    { status: "integrity-failed" },
+  );
+  const nonzero = await fixture(rawText, "user", [
+    { type: "output_text", text: "unrelated" },
+    { type: "input_text", text: rawText },
+  ]);
+  assert.deepEqual(
+    await verifyDeclaredProjection(dir, nonzero, {
+      ...span(nonzero, input),
+      fieldPath: "payload.content.1.text",
+    }),
+    { status: "verified", text: input },
+  );
+  const legacy = (value, transcript) =>
+    `<realtime_delegation><input>${value}</input>` +
+    `<transcript_delta>${transcript}</transcript_delta></realtime_delegation>`;
+  for (const [value, transcript, quote] of [
+    [
+      '{"type":"transcript_delta","text":"We decided to test."}',
+      'user: {"type":"transcript_delta","text":"We decided to test."}',
+      "We decided to test.",
+    ],
+    [
+      "Visit https://example.test/path now",
+      "user: Visit https://example.test/path now",
+      "Visit",
+    ],
+    ["Use ports 12", "user: Use ports 1,2", "Use ports 12"],
+    ["Use key ABC", "user: Use key abc", "Use key ABC"],
+    [
+      "Deploy production",
+      "user: Deploy production\nonly after tests pass.",
+      "Deploy production",
+    ],
+    ["Proceed", "user: Proceed\nassistant: Later", "Proceed"],
+    ["Proceed", "user: Proceed\nunknown: ambiguous", "Proceed"],
+    ["Proceed", "assistant: Quoted example:\n```\nuser: Proceed", "Proceed"],
+    [
+      "Proceed\n```",
+      "assistant: Quoted example:\n```\nuser: Proceed\n```",
+      "Proceed",
+    ],
+    [
+      "Proceed\n unknown: ambiguous",
+      "user: Proceed\n unknown: ambiguous",
+      "Proceed",
+    ],
+    ["Proceed", "assistant: Example\n> user: Proceed", "Proceed"],
+  ]) {
+    const bad = await fixture(legacy(value, transcript));
+    assert.equal(previewDeclaredProjection(bad, span(bad, quote)), null);
+    assert.deepEqual(
+      await verifyDeclaredProjection(dir, bad, span(bad, quote)),
+      { status: "integrity-failed" },
+    );
+  }
+  const multilineInput = "Deploy production\nonly after tests pass.";
+  const multiline = await fixture(
+    legacy(
+      multilineInput,
+      "assistant: Earlier\r\nuser: Deploy production\r\nonly after tests pass.",
+    ),
+  );
+  assert.deepEqual(
+    await verifyDeclaredProjection(
+      dir,
+      multiline,
+      span(multiline, multilineInput),
+    ),
+    { status: "verified", text: multilineInput },
+  );
+  assert.deepEqual(projectionChoices(valid.item.text), []);
+  assert.deepEqual(
+    await verifyDeclaredProjection(dir, valid, span(valid, context)),
+    { status: "integrity-failed" },
+  );
+  for (const bad of [
+    await fixture(wrapper("user: different synthetic input")),
+    await fixture(wrapper(`user: ${input}`), "assistant"),
+    await fixture(wrapper(`user: ${input}\n<input>ambiguous</input>`)),
+  ]) {
+    assert.equal(previewDeclaredProjection(bad, span(bad, input)), null);
+    assert.deepEqual(
+      await verifyDeclaredProjection(dir, bad, span(bad, input)),
+      {
+        status: "integrity-failed",
+      },
+    );
+  }
+});

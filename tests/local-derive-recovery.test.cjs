@@ -903,7 +903,7 @@ test("candidate continuation preserves earlier changed work and keeps a settled 
   let throttle = true;
   t.mock.method(performance, "now", () => (elapsed += throttle ? 1600 : 0));
   const initial = await run();
-  assert.equal(initial.reason, "SCAN_CONTINUATION");
+  assert.equal(initial.reason, "CANDIDATE_CONTINUATION");
   assert.equal(initial.modelCalls, 0);
   throttle = false;
   await f.append([f.terminal("late", oldTime)]);
@@ -912,7 +912,7 @@ test("candidate continuation preserves earlier changed work and keeps a settled 
   for (let pass = 0; pass < 5; pass++) {
     result = await run();
     if (result.modelCalls === 1) break;
-    assert.equal(result.reason, "SCAN_CONTINUATION");
+    assert.equal(result.reason, "CANDIDATE_CONTINUATION");
   }
   assert.equal(result.status, "validated");
   assert.equal(result.exactReferences, 1);
@@ -923,7 +923,7 @@ test("candidate continuation preserves earlier changed work and keeps a settled 
   for (let pass = 0; pass < 5; pass++) {
     result = await run();
     if (result.status === "no-eligible-messages") break;
-    assert.equal(result.reason, "SCAN_CONTINUATION");
+    assert.equal(result.reason, "CANDIDATE_CONTINUATION");
     assert.equal(result.modelCalls, 0);
   }
   assert.equal(result.status, "no-eligible-messages");
@@ -1040,5 +1040,98 @@ test("late terminal events and older-timestamp revisions reenter only their own 
         draft.includes(revision.versionId) && hasExactQuote(draft, revisedText),
     ),
   );
+  await f.assertNoReviewWrites();
+});
+
+test("bounded candidate continuation passes unavailable originals and retries the exact valid batch", async (t) => {
+  const f = await fixture(t);
+  const unavailable = [];
+  for (let i = 0; i < 25; i++) {
+    const message = await f.message(
+      "unavailable-" + i,
+      "unavailable-" + i,
+      "Next step: prepare synthetic unavailable checklist " + i + ".",
+      oldTime,
+    );
+    const file = join(
+      f.dir,
+      "originals",
+      message.metadata.original.sha256 + ".jsonl",
+    );
+    if (i % 2 === 0) await rm(file);
+    else {
+      const bytes = await readFile(file);
+      bytes[0] ^= 1;
+      await writeFile(file, bytes);
+    }
+    unavailable.push(message, f.terminal(message.turnId, oldTime));
+  }
+  const text = "Next step: prepare the synthetic available checklist.";
+  await f.append([
+    ...unavailable,
+    await f.message("available", "available", text, oldTime),
+    f.terminal("available", oldTime),
+  ]);
+  await f.migrate();
+  const version = (await f.item("available")).versionId;
+  const runner = syntheticRunner((inputs) => {
+    if (runner.prompts.length === 1)
+      throw Object.assign(new Error("Synthetic admission failure"), {
+        safeLocal: true,
+        code: "MEMORY_ADMISSION",
+      });
+    return oneCandidate(inputs);
+  });
+  const projection = require("../lib/local-derive-projection.cjs");
+  const inspect = projection.inspectDraftEvidence;
+  const inspected = [];
+  t.mock.method(projection, "inspectDraftEvidence", async (...args) => {
+    inspected.push(args[1].item.id);
+    return inspect(...args);
+  });
+  const options = { dir: f.dir, ...scope };
+  const op = await operations(options);
+  t.after(() => op.archive.close?.());
+  const first = await dailyReview(op, [], async () => ({ itemsImported: 0 }), {
+    localDraft: true,
+    localDraftRunner: (input) => runLocalDerive(input, runner),
+  });
+  assert.equal(first.localDraftStatus, "retryable");
+  assert.equal(first.localDraftReason, "CANDIDATE_CONTINUATION");
+  assert.equal(first.localModelCalls, 0);
+  const statusFiles = (await readdir(join(f.dir, "derived"))).filter((name) =>
+    name.startsWith("local-draft-"),
+  );
+  assert.equal(statusFiles.length, 1);
+  const stored = JSON.parse(
+    await readFile(join(f.dir, "derived", statusFiles[0]), "utf8"),
+  );
+  assert.equal(stored.localDraftReason, "CANDIDATE_CONTINUATION");
+  // Selection uses at most 19 slots; five of the 24 are reserved for
+  // separately reverifying a pending batch.
+  assert.ok(inspected.length > 0 && inspected.length <= 19);
+  const firstInspected = new Set(inspected);
+  assert.deepEqual(runner.prompts, []);
+
+  const failed = await runUntilAttempt(options, runner);
+  assert.ok(inspected.some((id) => !firstInspected.has(id)));
+  assert.ok(inspected.includes("available"));
+  assert.equal(failed.status, "retryable");
+  assert.equal(failed.reason, "MEMORY_ADMISSION");
+  assert.deepEqual(
+    runner.prompts[0].map((item) => item.text),
+    [text],
+  );
+  const recovered = await runUntilAttempt(options, runner);
+  assert.equal(recovered.status, "validated");
+  assert.deepEqual(runner.prompts[1], runner.prompts[0]);
+  const drafts = await f.drafts();
+  assert.equal(drafts.length, 1);
+  assert.ok(drafts[0].includes(version) && hasExactQuote(drafts[0], text));
+  for (let pass = 0; pass < 3; pass++) {
+    assert.equal((await runLocalDerive(options, runner)).modelCalls, 0);
+  }
+  assert.equal(runner.prompts.length, 2);
+  assert.equal((await f.drafts()).length, 1);
   await f.assertNoReviewWrites();
 });

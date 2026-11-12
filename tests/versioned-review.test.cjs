@@ -695,6 +695,67 @@ test("SQLite evidence lookup preserves explicit nonmessage type for v2 gate pari
     assert.equal(selected.row.item.metadata.recordType, "tool/result");
     assert.equal(previewDeclaredProjection(row, p), null);
     assert.equal(previewDeclaredProjection(selected.row, p), null);
+    const projection = {
+      source: [other.harness, other.instance, other.session].join("/"),
+      item: "malformed",
+      version: row.versionId,
+      kind: "full",
+      fieldPath: "data.text",
+      originalSha256: original.sha256,
+      startUtf16: 0,
+      endUtf16: 4,
+      startUtf8: 0,
+      endUtf8: 4,
+      previewStartUtf16: 0,
+      previewEndUtf16: 4,
+    };
+    const { source, item, version, ...span } = projection,
+      receipt = {
+        formatVersion: 2,
+        scope,
+        producer: {
+          writerProtocol: "generic",
+          recipeIdentity: "f".repeat(64),
+          outputProtocol: "candidate-v2",
+        },
+        generatedAt: null,
+        inputProjections: [projection],
+        candidates: [
+          {
+            kind: "decision",
+            basis: "confirmed",
+            claim: "Synthetic",
+            evidence: [
+              { source, item, version, quote: text, originalSpan: span },
+            ],
+          },
+        ],
+      },
+      bytes = Buffer.from(JSON.stringify(receipt)),
+      file = join(f.dir, "bad-type.json");
+    await fs.writeFile(file, bytes, { mode: 0o600 });
+    const result = spawnSync(
+      process.execPath,
+      [
+        join(__dirname, "../bin/memory.cjs"),
+        "draft-publish",
+        "--dir",
+        f.dir,
+        "--owner",
+        scope.owner,
+        "--project",
+        scope.project,
+        "--receipt",
+        file,
+        "--receipt-sha256",
+        sha(bytes),
+        "--expect-latest",
+        "none",
+      ],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(result.status, 0);
+    assert.equal(result.stdout, "");
   } finally {
     archive.close?.();
   }

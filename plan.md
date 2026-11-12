@@ -53,3 +53,5 @@ SQLite 的话题审核查询通过话题索引和精确版本联结选择候选�
 同一 Moonbridge 合成案例已验证现有归档和固定版本 Graphiti 的生效边界。Graphiti 能过滤明确写入的时间区间并取回 episode；精确版本和业务知晓时间由项目绑定。自动抽取、纠正、完整历史重建及后端选型仍待验证。 [时序对照](benchmark/graph-wiki/README.md#时序对照)
 
 FalkorDBLite 已有索引对照。独立校验覆盖完整的两条合成关系，并在超过读取上限时拒绝结果。网页审核历史到末页时会显示所选范围，来源列表也会提示跨话题证据的位置。审核链的存储层有界读取仍待实现。 [FalkorDBLite 回放](benchmark/graph-wiki/README.md#falkordblite-索引对照)
+
+SQLite 审核历史按审核行分页，应用只取得本页审核和所需沿革，支持跨话题纠正和同一来源的多个审核。相关追加记录会使游标失效。SQLite 内部仍需排序和核对相关输入，单条任务的完整沿革、图及当前决定另有读取成本。 [分页契约](spec/graph-wiki-contract-v0.1.md#分页来源与审核历史)

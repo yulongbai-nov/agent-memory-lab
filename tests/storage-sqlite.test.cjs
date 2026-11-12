@@ -177,3 +177,65 @@ test('reviewed history preserves cross-topic aliases, lineage and precise time a
  const selected=store.listItems(scope,{topic:'Alias',reviewOnly:true,reviewedTimeline:true});
  assert.deepEqual(selected.map(row=>[row.item.id,row.versionId]),[['root',root.versionId],['legacy',(await sqlite.getItem({...scope,id:'legacy'})).versionId]]);
 });
+
+test('SQLite reviewed pages fetch bounded roots and their dependencies, with relevant cursor invalidation',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'reviewed-sql-page-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const scope={owner:'synthetic',project:'p'},other={owner:'other',project:'p'},source={harness:'h',instance:'i',session:'s'},a=await openArchive({dir});
+ await a.importBatch({scope,source,checkpoint:{position:1},items:[
+  {id:'target',kind:'message',text:'target',time:'2026-01-01T01:00:00.000000001+01:00',metadata:{topic:'Native'}},
+  {id:'proof',kind:'message',text:'proof',metadata:{topic:'Elsewhere'}},
+  ...['z','é','a'].map(id=>({id,kind:'message',text:id,time:'2026-01-01T00:00:00.000000002Z',metadata:{topic:'Alias',reviewed:true,kind:'decision'}})),
+  {id:'unrelated',kind:'message',text:'unrelated',metadata:{topic:'Elsewhere'}}]});
+ await a.importBatch({scope:other,source,checkpoint:{position:1},items:[{id:'private',kind:'message',text:'private',metadata:{topic:'Alias',reviewed:true,kind:'decision'}}]});
+ const target=await a.getItem({...scope,id:'target'}),proof=await a.getItem({...scope,id:'proof'}),unrelated=await a.getItem({...scope,id:'unrelated'});
+ const ref=r=>({id:r.item.id,revision:r.versionId,source}),targetRef=ref(target),proofRef=ref(proof);
+ await a.addAnnotation({scope,id:'decision',kind:'decision',text:'decision',topic:'Alias',target:targetRef,valid_time:'2026-01-01T00:00:00.000000003Z'});
+ await a.addAnnotation({scope,id:'correction',kind:'correction',text:'correction',target:targetRef,revises:'decision',evidence:proofRef});
+ await a.addAnnotation({scope,id:'todo',kind:'todo',text:'todo',topic:'Alias',target:targetRef});
+ await a.addAnnotation({scope,id:'done',kind:'task-state',text:'done',taskRoot:{kind:'annotation',id:'todo'},parents:[],state:'completed',evidenceKind:'source',target:targetRef,evidence:proofRef});
+ await a.addAnnotation({scope,id:'unrelated-review',kind:'decision',text:'other review',topic:'Elsewhere',target:ref(unrelated)});
+ await migrateJsonToSqlite({dir});const archive=await openArchive({dir});t.after(()=>archive.close?.());
+ const {createQuery}=require('../lib/query.cjs'),query=createQuery(archive),args={...scope,topic:'Alias'};
+ const full=await query.reviewedTimeline(args);
+ assert.deepEqual(full.map(r=>r.review_id || r.text),['todo','a','z','é','decision']);
+ assert.deepEqual(full.at(-1).annotations[0].evidence,proofRef);
+ assert.equal(full[0].task_state.state,'completed');
+ const dateRange={from:'2026-01-01T00:00:00.000000001Z',to:'2026-01-01T00:00:00.000000001Z'};
+ const dated=await query.reviewedTimeline({...args,...dateRange});
+ assert.deepEqual(dated.map(r=>r.review_id),['todo','decision']);
+ assert.equal(dated.at(-1).time,'2026-01-01T00:00:00.000000003Z');
+ const calls=[],originalPage=archive.reviewedHistoryPage.bind(archive),originalItems=archive.listItems,originalAnnotations=archive.listAnnotations;
+ archive.reviewedHistoryPage=async (...params)=>{const result=await originalPage(...params);calls.push({params,result});return result;};
+ archive.listItems=()=>{throw Error('reviewed page must not load scope-wide items');};
+ archive.listAnnotations=()=>{throw Error('reviewed page must not load scope-wide annotations');};
+ const first=await query.reviewedTimelinePage({...args,limit:2});assert(first.nextCursor);assert.equal(first.rows.length,2);
+ const middle=await query.reviewedTimelinePage({...args,limit:2,cursor:first.nextCursor});assert(middle.nextCursor);assert.equal(middle.rows.length,2);
+ const last=await query.reviewedTimelinePage({...args,limit:2,cursor:middle.nextCursor});assert.equal(last.nextCursor,null);
+ assert.deepEqual([...first.rows,...middle.rows,...last.rows],full);
+ assert.equal(calls.length,3);
+ assert.deepEqual(calls.map(({result})=>result.dependencies.map(a=>a.id)),[['done'],[],['correction']]);
+ for(const {result} of calls){
+  assert(result.entries.length<=2);assert(result.entries.every(e=>e.record && Object.hasOwn(e,'annotation')));
+  assert(result.entries.filter(e=>e.annotation).every(e=>e.record.item.text===undefined));
+  assert(!JSON.stringify(result).includes('unrelated-review'));assert(!JSON.stringify(result).includes('private'));
+  if(result.next){assert.equal(result.next.after.length,4);assert(result.next.snapshot);}
+ }
+ assert.deepEqual((await query.reviewedTimelinePage({...args,...dateRange})).rows,dated);
+ const decoded=JSON.parse(Buffer.from(first.nextCursor,'base64url').toString());
+ const oldCursor=Buffer.from(JSON.stringify({binding:decoded.binding,offset:2,fingerprint:'0'.repeat(64)})).toString('base64url');
+ await assert.rejects(query.reviewedTimelinePage({...args,limit:2,cursor:oldCursor}),/reviewed timeline cursor is stale/);
+ decoded.position.after[3]=Number.MAX_SAFE_INTEGER;
+ const missingAnchor=Buffer.from(JSON.stringify(decoded)).toString('base64url');
+ await assert.rejects(query.reviewedTimelinePage({...args,limit:2,cursor:missingAnchor}),/invalid reviewed timeline cursor/);
+ await archive.addAnnotation({scope,id:'unrelated-note',kind:'annotation',text:'unrelated note',target:ref(unrelated)});
+ await query.reviewedTimelinePage({...args,limit:2,cursor:first.nextCursor});
+ await archive.addAnnotation({scope,id:'later-state',kind:'task-state',text:'reopen',taskRoot:{kind:'annotation',id:'todo'},parents:['done'],state:'open',evidenceKind:'source',target:targetRef,evidence:proofRef});
+ await assert.rejects(query.reviewedTimelinePage({...args,limit:2,cursor:first.nextCursor}),/stale/i);
+ const fresh=await query.reviewedTimelinePage({...args,limit:2});
+ await archive.addAnnotation({scope,id:'correction-2',kind:'correction',text:'correction 2',target:targetRef,revises:'decision',evidence:proofRef});
+ await assert.rejects(query.reviewedTimelinePage({...args,limit:2,cursor:fresh.nextCursor}),/stale/i);
+ const newer=await query.reviewedTimelinePage({...args,limit:2});
+ await archive.addAnnotation({scope,id:'older',kind:'decision',text:'older review',topic:'Alias',target:targetRef,valid_time:'2025-01-01T00:00:00Z'});
+ await assert.rejects(query.reviewedTimelinePage({...args,limit:2,cursor:newer.nextCursor}),/stale/i);
+ archive.listItems=originalItems;archive.listAnnotations=originalAnnotations;
+});

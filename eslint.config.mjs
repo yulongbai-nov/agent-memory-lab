@@ -6,6 +6,8 @@ export default defineConfig([
   { ignores: ["node_modules/**", "lib/generated/**"] },
   {
     files: [
+      "src/graph-wiki-browser.cts",
+      "src/graph-wiki-view.cts",
       "src/legacy-input-binding.cts",
       "src/query-time.cts",
       "src/bounded-memory-find.cts",
@@ -67,6 +69,8 @@ export default defineConfig([
       "lib/bounded-memory-relay.cjs",
       "lib/local-draft-index.cjs",
       "lib/task-state.cjs",
+      "tests/graph-wiki-view.test.cjs",
+      "tests/graph-wiki-browser.cjs",
       "tests/task-state.test.cjs",
       "tests/task-state-cli.test.cjs",
       "tests/task-state-couch-wire.cjs",
@@ -113,5 +117,9 @@ export default defineConfig([
         process: "readonly",
       },
     },
+  },
+  {
+    files: ["tests/graph-wiki-browser.cjs"],
+    languageOptions: { globals: { document: "readonly", URL: "readonly" } },
   },
 ]);

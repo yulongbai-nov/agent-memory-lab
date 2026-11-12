@@ -624,3 +624,53 @@ test("declared preview does not expose tool or turn-event text", () => {
   ])
     assert.equal(previewDeclaredProjection({ source, item }, p), null);
 });
+
+test("SQLite evidence lookup preserves explicit nonmessage type for v2 gate parity", async (t) => {
+  const f = await fixture(t),
+    archive = await openArchive({ dir: f.dir }),
+    other = { harness: "dsh", instance: "fixture", session: "malformed" },
+    text = "safe",
+    original = await originalCapture(f.dir)({
+      coordinate: 1,
+      bytes: Buffer.from(
+        JSON.stringify({ type: "user/message", data: { role: "user", text } }) +
+          "\n",
+      ),
+    });
+  try {
+    await archive.importBatch({
+      scope,
+      source: other,
+      checkpoint: { position: 1 },
+      items: [
+        {
+          id: "malformed",
+          kind: "message",
+          role: "user",
+          text,
+          metadata: { recordType: "tool/result", original },
+        },
+      ],
+    });
+    const row = await archive.getItem({
+        ...scope,
+        source: other,
+        id: "malformed",
+      }),
+      selected = await archive.lookupDraftEvidence({
+        ...scope,
+        source: other,
+        id: "malformed",
+        revision: row.versionId,
+      }),
+      p = { kind: "full", previewStartUtf16: 0, previewEndUtf16: 4 };
+    const {
+      previewDeclaredProjection,
+    } = require("../lib/local-derive-projection.cjs");
+    assert.equal(selected.row.item.metadata.recordType, "tool/result");
+    assert.equal(previewDeclaredProjection(row, p), null);
+    assert.equal(previewDeclaredProjection(selected.row, p), null);
+  } finally {
+    archive.close?.();
+  }
+});

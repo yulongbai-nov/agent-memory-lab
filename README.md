@@ -1,7 +1,8 @@
 # Agent Memory Lab
 
-个人跨 Harness／Agent 记忆系统的开放设计与合成实验。这里保存的是**提案、代码和合成示例**，不保存个人会话或真实运行数据。
+个人跨 Harness／Agent 记忆系统的开放设计与合成实验。这里保存的是**提案、代码、合成示例及其验收结果**，不保存个人会话、私有运行数据或凭据。
 
+- [仓库协作入口 AGENTS.md](AGENTS.md)：关键文件索引、代码质量要求、验证方法和协作边界。
 - [记忆数据契约 v0.1](spec/contract-v0.1.md)：事件、来源、纠正、状态和验收边界。
 - [JSON Schema](spec/event.schema.json)、[正例](examples/synthetic.json)、[反例](examples/invalid-cases.json)。
 - [设计决定与开放问题](spec/design-decisions.md)。

@@ -8,15 +8,15 @@
 | 归档 | 每项目独立作用域。原件按哈希保存，版本及批注追加，checkpoint 有位置和覆盖版本约束。SQLite 为本机索引，旧档可按已有 ADR 检查。 |
 | 检索与复核 | CLI、stdio MCP 和网页使用同一作用域。检索限量，当前决定区分纠正和实际改变。原始与后续纠正分别引用各自的精确版本。 |
 | 同步与离线 | CouchDB 中继同步归档记录和引用，原件资产另行保护与核验。网页离线存放用户选择保存的已审核摘要和草稿。 |
-| 派生 | 确定性每日视图和本地草稿队列可从归档重建。Writer 保存成功缓存和待核实草稿，CLI 按快照读取待审项。用户复核沿用 `annotate`。 |
+| 派生 | 确定性每日视图和本地草稿队列可从归档重建。Writer 保存成功缓存和待核实草稿，CLI 按快照读取待审项。普通复核使用 `annotate`；版本化候选可经显式 `draft-review` 保存决定或待办及可携带来源链，详见 [v2 读审契约](local-draft-review-v2.md)。 |
 
 已实现可从本机归一化文件读取的 [ChatGPT 快照边界](chatgpt-snapshot-v1.md) 和 [小型本体投影](ontology-projection-v0.1.md)，均使用合成资料验收。原始导出转换、真实 ChatGPT 回填、图谱生产运行、原生深链和远端常在线部署分别验收。[数据契约](contract-v0.1.md) · [接入设计](DSH-Codex-integration-v0.1.md) · [本机 SQLite ADR](adr-local-sqlite-index.md)
 
 ## 逐步迁移
 
-严格 TypeScript 覆盖收集器、ChatGPT 快照、本体投影、有界检索与证据工具，以及语义校验、本地草稿队列、准入等待和待审读取。既有 CommonJS 入口调用编译产物。外部模型输出和磁盘草稿均先验证结构。历史 JavaScript 留在明确的 [旧文件清单](../scripts/legacy-js-scope.json)，新增或移除源文件时同步更新门禁范围。
+严格 TypeScript 覆盖收集器、ChatGPT 快照、本体投影、有界检索与证据工具，以及语义校验、本地草稿队列、准入等待、候选与审核契约、版本化读审和时间比较。既有 CommonJS 入口调用编译产物。外部模型输出和磁盘草稿均先验证结构。历史 JavaScript 留在明确的 [旧文件清单](../scripts/legacy-js-scope.json)，新增或移除源文件时同步更新门禁范围；索引和贡献要求见[仓库协作入口](../AGENTS.md)。
 
-使用 Node.js 24.22.1。运行仓库入口前执行 `npm ci --ignore-scripts` 和 `npm run build`。`npm run quality` 汇集代码 lint、格式、严格类型、工作流和两条隔离运行脚本的检查，需要 actionlint 与 ShellCheck。行为测试用 `npm test`。`npm run smoke:package` 构建并安装仅含生产依赖的发行包，验收打包后的收集器、语义模块、只读草稿命令、哈希助手和 MCP 合成检索。
+使用 Node.js 24.22.1。运行仓库入口前执行 `npm ci --ignore-scripts` 和 `npm run build`。`npm run quality` 汇集代码 lint、格式、严格类型、工作流和选定 shell 脚本的检查，需要 actionlint 与 ShellCheck。行为测试用 `npm test`。`npm run smoke:package` 构建并安装仅含生产依赖的发行包，验收打包后的收集器、语义模块、只读草稿命令、哈希助手和 MCP 合成检索；新接口还需按其规格验证实际安装包。
 
 ## 验证矩阵
 
@@ -24,7 +24,7 @@
 |---|---|---|
 | 类型、代码格式与工作流 | 当前 TypeScript 严格检查，迁移范围的 lint、格式与 GitHub Actions 语法通过 | 按迁移清单逐步扩大旧 JavaScript 覆盖 |
 | 契约与归档 | 正反例、读写隔离、稳定 ID、版本和 checkpoint、精确原件、纠正与批注回归通过 | 私有来源完整性需冻结清单并核对原生记录 |
-| 待审草稿 | 原生 CLI 和安装包分别验证显式作用域、快照标识、原件跨度、旧版及缺失状态 | 模型输出质量和私有部署分别验收，详见 [只读契约](local-draft-read.md) |
+| 待审草稿与复核 | 原生 CLI 和安装包分别验证显式作用域、快照标识、原件跨度、旧版及缺失状态；v2 还验证审核幂等和完整依据回链 | 模型输出质量和私有部署分别验收；缺完整快照或原件时标注可携带记录的核验边界，详见 [v1 读取](local-draft-read.md)与 [v2 读审](local-draft-review-v2.md) |
 | CouchDB | 临时独立项目库的角色权限与离线编辑收敛通过 | 常在线主机、跨主机 TLS 和设备配置单独验证 |
 | 双 CLI 公开任务 | 两个 Linux CLI 的真实 MCP 调用核对合成待办、归档标记和两处精确证据，外部模型调用为零 | 公开协议回放测兼容性 |
 | 双 CLI 受保护任务 | 主分支手动触发，固定 Luna low，模型、完成事件、用量和预算计数核对，两端输出通过证据门槛 | 公共和受保护结果按提交分别记录 |

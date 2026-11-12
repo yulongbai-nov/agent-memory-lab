@@ -34,6 +34,12 @@ Codex 的目录清单可同时指定 `root` 和 `archiveRoot`。活跃会话移�
 
 证据默认展示脱敏预览和原件摘要引用。`archived` 表示本机有对应原件，`source-only` 表示当前只有来源引用，`missing-locally` 表示引用已知但本机没有可核验的原件。旧投影只有在补扫实际读到源记录时才有原件；已被源改写或丢失的旧内容无法补造。遇到坏行、格式缺口或字节预算限制时保留缺口。用 `verify-original --id <item> --revision <version> --project work` 校验原件，仅返回哈希、字节数和校验结果。原件不经 MCP、网页、同步或 CI 输出；macOS 受限 MCP 进程可检查其元数据，不能读取原件字节。预览使用规则脱敏，不能视为敏感信息完整分类。
 
+用 `original-coverage --source codex --instance <归档实例> --session <归档会话> --first-coordinate 1 --last-coordinate 512 --project work` 查看单个来源的记录位置清单。实例和会话使用 `coverage` 返回的归档身份。每次最多检查 512 个连续位置和 4,096 个版本，超过版本预算时缩小范围。SQLite 只把所选范围的原件引用元数据交给应用，JSON 后端沿用整份档案读取。
+
+清单只输出位置、状态和数量。`metadata-present` 表示该位置的唯一原件引用所指文件通过存在、权限和长度检查。精确哈希仍用 `verify-original` 核对，历史版本按各自的引用核验。`source-only`、`missing-locally`、`invalid-metadata`、`ambiguous` 分别表示仅有来源记录、原件本机不可用、引用元数据异常和映射有歧义。`unrepresented` 表示断点以内未找到该位置的版本元数据，可能包含无法解析或未生成条目的位置。`uncheckpointed` 表示超过已记录的断点。旧状态缺少覆盖标志时返回 `null`。
+
+合并多个范围时，把首份结果的 `snapshot` 传给后续请求的 `--expect-snapshot`。同一来源的版本或断点元数据变化时重新开始核对。本机文件可用性是逐次观察，清单未读取源会话或原件字节。
+
 ## 查询、批注和入口
 
 ```sh

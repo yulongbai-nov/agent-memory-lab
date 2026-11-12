@@ -11,6 +11,7 @@ export default defineConfig([
       "src/legacy-input-binding.cts",
       "src/query-time.cts",
       "src/repair-original.cts",
+      "src/original-coverage.cts",
       "src/reviewed-page.cts",
       "src/training-manifest.cts",
       "src/training-split.cts",

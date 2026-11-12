@@ -14,6 +14,7 @@ const typescript = [
   "src/legacy-input-binding.cts",
   "src/query-time.cts",
   "src/repair-original.cts",
+  "src/original-coverage.cts",
   "src/bounded-memory-find.cts",
   "src/bounded-memory-read.cts",
   "src/chatgpt-snapshot.cts",

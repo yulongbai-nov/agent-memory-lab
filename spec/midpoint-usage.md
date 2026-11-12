@@ -1,12 +1,14 @@
-# 中期使用手册
+# 本机使用手册
+
+从[项目 README](../README.md)运行合成演示。这里介绍本机操作与边界，当前验收及缺口见[完成计划](../plan.md)。
 
 ## 宿主机与服务
 
-宿主安装使用 Node.js 24.22.1 和 `npm ci --ignore-scripts && npm run build`。DSH 压缩记录包含连续 Zstandard 帧，导入器在读取前验证解码能力。CouchDB 可以在容器里运行。宿主机 Codex 已用既有登录完成合成 MCP 查询。Linux 隔离任务用独立代理验证 Codex 与 DSH 的模型和记忆查询。宿主 DSH 桌面 profile、Remote Host 和真实手机另行验收。两端的持久化文件导入可离线执行。
+宿主安装使用 Node.js 24.22.1 和 `npm ci --ignore-scripts && npm run build`。DSH 压缩记录包含连续 Zstandard 帧，导入器在读取前验证解码能力。CouchDB 可以在容器里运行。两端的持久化文件导入可以离线执行。公开合成协议回放使用独立 CLI 和模拟提供方，带预算的真实模型验收另有入口。宿主会话、Remote Host 和手机状态见[完成计划](../plan.md)。
 
-运行 `node bin/memory.cjs --help` 查看命令。本机 SQLite 迁移、旧档和回退出口见 [本机索引 ADR](adr-local-sqlite-index.md)。普通查询以只读方式打开已有档案。每条命令都用 `--project` 选定项目，`--owner` 默认 `local`。不同设备应使用不同的 `--dir` 和不同实例标识。目录和归档分别使用 0700 和 0600 权限。CLI 的 `evidence` 会返回所请求归档原文，避免将其重定向到公共 CI、日志和版本控制。
+运行 `node bin/memory.cjs --help` 查看命令。本机 SQLite 迁移、旧档和回退出口见 [本机索引 ADR](adr-local-sqlite-index.md)。普通查询以只读方式打开已有档案。每条命令都用 `--project` 选定项目，`--owner` 默认 `local`。不同设备应使用不同的 `--dir` 和不同实例标识。目录和归档分别使用 0700 和 0600 权限。CLI 的 `evidence` 会返回所请求归档版本的脱敏投影和原件可用性。使用 `verify-original` 在本机校验原件摘要。私有查询结果留在获准的运行范围。
 
-本机可显式使用 `find --preview` 查看候选的归档消息片段与同版引用；默认 CLI 和 MCP 输出不变。片段不是语义总结，也不验证原件当前可读，详见[预览边界](find-preview-v0.1.md)。
+本机可显式使用 `find --preview` 查看候选的归档消息片段与同版引用；默认 CLI 和 MCP 输出不变。片段不是语义总结，也不验证原件当前可读，详见[预览边界](find-preview-v0.1.md)。`--from`、`--to` 传入纯日期时使用 UTC 日界，网页日期控件使用浏览器本地日界，见[时间语义](query-time.md)。
 
 ## 初次回填与增量
 
@@ -41,7 +43,7 @@ node bin/memory.cjs serve --project work --port 8787
 
 网页或 CLI 可以明确复核决定、变更和待办，也可以批注纠正。证据使用来源、条目 ID 和归档版本组合。变更引用前一条审核的编号；纠正必须引用确切解释的审核编号，保存即生效，拒绝另填生效时间。后来另有原始消息作为依据时，在 CLI 的 `annotate --kind correction` 同时传入旧 `--target`、`--revises` 审核编号和新 `--evidence` 精确引用。MCP 对应字段为 `target`、`revises` 和 `evidence`。查询保留旧 `citation`，有新证据时另返回 `effectiveCitation`。各同步端须先升级再传输含新字段的纠正。将来的决定或变更可单独指定生效时间。审核内容独立追加，保留原文和时间线。还没复核的原文可以搜索和查证，决定状态和下一步需要明确复核。话题有多个矛盾的决定时会标为待核实。
 
-在支持 stdio MCP 的宿主可注册 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认提供五个查询工具，启用 `--allow-annotations` 后可追加批注。合成演示绑定只查询合成档案。[共用 Skill](../skills/agent-memory/SKILL.md) 说明如何核对私有 MCP 绑定或使用本机固定范围只读入口。该入口支持显式预览、分页待办和最新批次草稿读取时，可直接使用下列命令：
+在支持 stdio MCP 的宿主可注册 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认提供五个查询工具，启用 `--allow-annotations` 后可追加批注。合成演示绑定只查询合成档案。[共用 Skill](../skills/agent-memory/SKILL.md) 说明如何核对私有 MCP 绑定或使用本机固定范围只读入口。以下示例适用于已确认启用相应只读命令的固定范围入口。先从列表选择完整候选 ID，审核 ID 从审核结果或查询中取得。
 
 ```sh
 launcher="$HOME/.local/share/agent-memory-lab/memory-private.sh"
@@ -49,15 +51,24 @@ launcher="$HOME/.local/share/agent-memory-lab/memory-private.sh"
 "$launcher" task-list --limit 20 --offset 0
 "$launcher" draft-list
 "$launcher" draft-show --id="$candidate_id"
+"$launcher" draft-list --format v2
+"$launcher" draft-show --format v2 --id="$versioned_candidate_id"
+"$launcher" draft-review-show --review-id="$review_id"
 ```
 
 `task-list` 每页默认 20 项，上限 50，返回 `coverage` 供分页。当前状态通过现有 `timeline` 及精确证据回溯。原任务的完成与取消不列在待办页。默认 MCP 保持五个查询工具，时间线可显示任务状态。详见[任务状态契约](task-state-observations.md)。
 
-固定范围入口由可信的本机配置绑定，不传入范围覆盖参数。使用前核对当前宿主和模型是否获准接收该范围的工具输出。默认 MCP 不注册预览或草稿工具。使用共享链接时，两端可指向同一份 Skill 文件；进程是否加载新版需在各自会话核实。
+固定范围入口由可信的本机配置绑定，不传入范围覆盖参数。使用前核对当前宿主和模型是否获准接收该范围的工具输出。默认 MCP 不注册预览或草稿工具。v1 与 v2 的快照各自维护，v2 旧 ID 在快照保留时仍可查。固定范围脚本拒绝发布与审核写入。使用共享链接时，两端可指向同一份 Skill 文件；进程是否加载新版需在各自会话核实。
+
+### 历史快照
+
+以下两段保留 2026-11-11 的宿主观察及当时的证据限制，记录提交为 `45377ad` 与 `8459966`。最新状态见[完成计划](../plan.md)。
 
 用户随后在同一 DSH Default workspace 桌面会话完成一次合成 CLI 检查，界面配置为 GPT-6-Luna / Low，一次请求显示 25 秒完成。实际轨迹包含 Skill agent-memory，以及固定 local/demo 合成范围内的 find、timeline、current 和两次 evidence。查找返回 5 个候选、总数 12；Release checklist 时间线为两条且无后页，决定和待办答案与证据文本及归档版本引用一致。两次证据均标为 source-only / capture-not-configured，因此核验范围是合成归档版本引用。原件字节回查、私有 MCP 调用、真实召回和其他会话仍需分别验收；模型型号以本次 UI 配置为证据。
 
 2026-11-11 的只读检查显示，DSH Remote UI 已登录，但连接数为 0，且没有可用 Host。账号登录、Host 连接和手机 Remote 使用分别验收。
+
+### 网页入口
 
 网页绑定 IPv4 loopback，可选同一 Mac 的私网 HTTPS 代理。用户可主动保存已复核摘要和下一步，草稿存于同一浏览器。离线重载需要保持原先的浏览器配置和来源。重新连接后可用同一重试 ID 提交草稿。[手机接入与验收](mobile-access.md)
 
@@ -75,7 +86,7 @@ macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private
 
 ## 合成语义整理验收
 
-运行 `node bin/semantic-demo.cjs`。需要宿主机已登录的 Codex CLI。入口只接受仓库内哈希已固定的公开夹具 `examples/synthetic.json`，没有路径、项目或自定义输入参数。发送五条合成消息及 `semantic-candidates-v1` 提取说明，夹具中的预期事件不进入提示。临时会话跳过用户配置、记忆、hooks 和宿主 Skill 发现，关闭 shell、网页搜索和 MCP。构建侧请求配置固定为 `gpt-6-luna`、`low`，与召回验收分别计量。接口未提供可独立核验的已解析型号。
+明确授权运行公开合成模型试验时，使用 `node bin/semantic-demo.cjs`。需要宿主机已登录的 Codex CLI。入口只接受仓库内哈希已固定的公开夹具 `examples/synthetic.json`，没有路径、项目或自定义输入参数。发送五条合成消息及 `semantic-candidates-v1` 提取说明，夹具中的预期事件不进入提示。临时会话跳过用户配置、记忆、hooks 和宿主 Skill 发现，关闭 shell、网页搜索和 MCP。构建侧请求配置固定为 `gpt-6-luna`、`low`，与召回验收分别计量。接口未提供可独立核验的已解析型号。
 
 每次最多一批，提示上限 4 KiB、结构化回答上限 8 KiB、超时 75 秒。最多四个候选，每条须有一到三处能精确匹配来源、条目、版本和引文的引用。候选全部进入「待核实」结果，独立于归档、当前决定和 Wiki。结构和引用校验用于核对证据链接，语义仍需复核。成功缓存键包括模型、推理强度、固定夹具哈希、含来源版本的提示、提示版本和输出结构。真实 CLI 缓存和注入测试缓存采用不同命名空间，读回时核对来源元组、用量及候选引用。旧格式条目不迁移。失败不缓存，可以重试，能取得的失败用量单独报告。
 
@@ -83,21 +94,21 @@ macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private
 
 ## 手动本地语义构建
 
-在已迁移的私有 SQLite 档案上显式运行一批：
+在已迁移的私有 SQLite 档案上按授权显式运行一批。先设置 `MEMORY_DIR`、`MEMORY_OWNER` 与 `MEMORY_PROJECT`。
 
 ```sh
-node bin/local-derive.cjs --dir <private-dir> --owner local --project <project>
+node bin/local-derive.cjs --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT"
 ```
 
 `--synthetic` 用同一公开合成夹具验收，可指定单独的私有空目录。实际构建使用本机现有的 llama.cpp 和 Qwen3.5 4B Q4_K_M。它优先选择已有结束标记且有决定、变更或下一步线索的轮次，同一轮次最多选取五条用户或助手预览。能匹配原件的短消息保留全文，长消息可从至多 32 KiB 的预览中选取有界的原句片段。已知转派包装只取输入字段，并标明是转派片段。未知包装、转录增量、工具、配置、未完成条目、找不到本机原件的记录，以及仍需脱敏的片段均跳过。输入总长上限为 1,500 字节。短引用别名映射回实际来源、条目与版本，再对归档脱敏预览逐字校验。每个入选片段都要唯一匹配哈希核验后的原件字段，草稿记录全文、片段或转派投影。原件偏移从解码后的字段字符串起算，采用零基、半开区间，分别记录 UTF-16 代码单元和 UTF-8 字节；预览偏移使用 UTF-16。原件定位包含字段路径和哈希。完整原件哈希可通过独立的 `verify-original` 命令校验。
 
 推理使用命令行，不监听网络。macOS 沙盒拒绝网络、写文件和用户数据目录读取，在这些目录中仅允许读取固定模型和本次私有临时输入。系统运行库仍可读。每次启动前验证禁网和合成文件读取拒绝，失败则停止。两条 CPU 线程，上下文 768 token，输出上限 384 token，最长 60 秒。内存压力与进程常驻内存受监控。提示和临时文件存放在经 Git 工作树校验的私有 `local-derive/` 子目录，目录 0700、文件 0600。若该子目录自身已初始化为 Git 仓库，入口也会拒绝运行。
 
-构建命令只打印统计。成功候选可在本机用显式范围读取：
+构建命令只打印统计。可用显式范围读取默认 Writer v3 生成的 v1 候选。
 
 ```sh
-node bin/memory.cjs draft-list --dir <private-dir> --owner local --project <project>
-node bin/memory.cjs draft-show --dir <private-dir> --owner local --project <project> --id <candidate-id>
+node bin/memory.cjs draft-list --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT"
+node bin/memory.cjs draft-show --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT" --id "$MEMORY_CANDIDATE_ID"
 ```
 
 列表返回当前快照和候选编号。详情返回选定候选的「待核实」状态、精确引用、来源版本和原件可用性。引文来自脱敏归档预览，详情会在本机复核精确原件跨度。若快照已更新，重新列表再选择。「待核实」是生成时的草稿状态。当前正式决定走 `current` 或 `timeline`，提交人工复核沿用 `annotate`。[只读草稿契约](local-draft-read.md)
@@ -150,8 +161,7 @@ node bin/memory.cjs draft-review-show --review-id "$MEMORY_REVIEW_ID" \
 
 从审核结果或查询复制 `MEMORY_REVIEW_ID`。详情分别显示生成候选、人工审核和证据核验结果，并保留首次接受审核的 `reviewedAt`。同步后只有审核胶囊时，仍可回查原候选，`snapshotStatus` 标为 `missing`。完整快照通过哈希及成员校验后才显示 `verified`。新审核须核实所有原件，旧源版本仍可按精确引用审核。
 
-指针期望过期时重新列表，审核请求重试时使用同一候选 ID 及同样的人工内容。变更和纠正继续用现有 `annotate`。既有 v1 草稿仍使用省略 `--format` 的命令。此流程使用正常本机 CLI，默认 writer 和只读入口继续原有方式。[版本化草稿审阅契约](local-draft-review-v2.md)
-
+指针期望过期时重新列表，审核请求重试时使用同一候选 ID 及同样的人工内容。变更和纠正继续用现有 `annotate`。既有 v1 草稿仍使用省略 `--format` 的命令。显式写入使用正常本机 CLI。固定范围 launcher 只读，默认 Writer 继续生成 v1 草稿。[版本化草稿审阅契约](local-draft-review-v2.md)
 
 
 ## 私有 CouchDB 同步

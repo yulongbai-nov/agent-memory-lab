@@ -1,16 +1,16 @@
 # Graph + Wiki 设计与研究
 
-本文区分已确认需求、建议与待决事项；不声明新的运行能力。长期目标见[路线图](roadmap.md)，现有图投影的精确边界见[投影规格](ontology-projection-v0.1.md)。
+本文区分已确认需求、已实现的首轮及待决事项。长期目标见[路线图](roadmap.md)，现有图投影的精确边界见[投影规格](ontology-projection-v0.1.md)。
 
 ## 用户已确认
 
-- 项目工作页与知识主题页是平级入口；可视化是正式需求。关系图选用 Cytoscape.js，时间线选用 vis-timeline；优先复用或适配现成组件。选型不代表已安装、接入、测试或达到性能目标。
+- 项目工作页与知识主题页是平级入口；可视化是正式需求。关系图选用 Cytoscape.js，时间线选用 vis-timeline；优先复用或适配现成组件。首轮接入和合成浏览器验证已完成，性能与真实资料范围仍待验。
 - 原始会话不可变，纠正追加；Wiki、图及索引是可重建视图。引用须定位 harness、session、turn 和 revision，并保留作用域及来源可用性。
 - 决定状态区分**已确定、待决定、待核实、已替代、已取消**；与任务执行状态分开。时间或话题线索应提供约五个候选，供用户进一步查证。
 
 ## 现有实现与边界
 
-仓库已有 Wiki、查询、时间线和小型确定性图投影；后者只使用已审核批注与精确归档版本，不推断事实或同步图数据库。其合成场景和历史歧义边界见[投影规格](ontology-projection-v0.1.md)。这些不证明下述 Graph + Wiki 界面、完整时间模型或真实资料验收已经完成。
+仓库已有 Wiki、查询、时间线和小型确定性图投影；后者只使用已审核批注与精确归档版本，不推断事实或同步图数据库。其合成场景和历史歧义边界见[投影规格](ontology-projection-v0.1.md)。现已在同一 Web 内增加项目与主题入口、局部关系图和可视时间线，复用现有查询、当前决定与精确证据。独立 Chrome 使用跨 Harness 合成案例验证两入口、状态、图表和精确来源及原档不变；未调用模型。测试禁用 service worker，不证明新的离线能力。输出上限 100 条，并非底层分页；这不是完整 Wiki／ontology 应用，也不证明完整时间模型或真实资料验收。
 
 ## 建议的共同基础与交互
 
@@ -22,8 +22,8 @@
 
 | 组件 | 定位与状态 |
 | --- | --- |
-| [Cytoscape.js](https://js.cytoscape.org/) | 已选关系图，MIT；适配、无障碍和规模表现待测。 |
-| [vis-timeline](https://github.com/visjs/vis-timeline) | 已选时间线，Apache-2.0 OR MIT；时间含义由本项目契约提供，接入待测。 |
+| [Cytoscape.js](https://js.cytoscape.org/) | 关系图首轮已集成并通过合成浏览器验证，MIT；无障碍、性能和真实资料范围待验。 |
+| [vis-timeline](https://github.com/visjs/vis-timeline) | 时间线首轮已集成并通过合成浏览器验证，Apache-2.0 OR MIT；时间含义由本项目契约提供，性能和真实资料范围待验。 |
 | [Sigma.js](https://www.sigmajs.org/) | MIT，大图浏览备选，非当前首选。 |
 | [React Flow](https://reactflow.dev/) | MIT 核心，未来本体／Schema 编辑器候选，首批不要求。 |
 | [llmwiki](https://github.com/lucasastorian/llmwiki) | Apache-2.0，页面、来源脚注和图查看器的复用研究候选；支持删除，部分注释元数据仅存 index.db，不能整体套用其来源语义。 |

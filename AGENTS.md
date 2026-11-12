@@ -20,7 +20,7 @@
 | 查找、时间、决定与任务状态 | [查询](lib/query.cjs)、[时间比较](src/query-time.cts)、[预览](src/find-preview.cts)、[任务状态](lib/task-state.cjs) | [时间语义](spec/query-time.md)、[任务观察](spec/task-state-observations.md)、[预览](spec/find-preview-v0.1.md) |
 | 每日整理、本地 Writer、缓存与恢复 | [每日入口](lib/daily.cjs)、[草稿生成](lib/local-derive.cjs)、[草稿索引](lib/local-draft-index.cjs)、[队列](src/local-draft-state.cts)、[资源准入](src/local-admission.cts) | [恢复契约](spec/local-draft-recovery.md)、[资源准入](spec/local-admission-wait.md) |
 | 候选格式、草稿读取与审阅来源链 | [模型输出契约](src/candidate-contract-v2.cts)、[审核契约](src/candidate-review-contract.cts)、[v1 读取](src/local-draft-read.cts)、[v2 读审](src/versioned-review.cts) | [候选契约](spec/candidate-contract-v2.md)、[v1 读取](spec/local-draft-read.md)、[v2 读审](spec/local-draft-review-v2.md) |
-| 本体、图谱与检索对照 | [图投影](src/ontology-projection.cts)、[检索对照](benchmark/memory-views/) | [Graph + Wiki 设计](spec/graph-wiki-design.md)、[本体规格](spec/ontology-projection-v0.1.md)、[评测说明](benchmark/memory-views/README.md)、[OntoSmith 研究](spec/research/ontosmith-reuse.md) |
+| 本体、图谱与检索对照 | [图投影](src/ontology-projection.cts)、[检索对照](benchmark/memory-views/) | [Graph + Wiki 设计](spec/graph-wiki-design.md)、[查询契约](spec/graph-wiki-contract-v0.1.md)、[本体规格](spec/ontology-projection-v0.1.md)、[评测说明](benchmark/memory-views/README.md)、[OntoSmith 研究](spec/research/ontosmith-reuse.md) |
 | Agent 使用流程与独立验证 | [共享记忆 Skill](skills/agent-memory/SKILL.md)、[测试](tests/)、[发行包验收](scripts/smoke-package.cjs) | [双 CLI 验收](benchmark/harness-e2e/README.md)、[Luna Writer 对照](benchmark/writer-luna/README.md) |
 
 ## 代码质量要求
@@ -71,6 +71,8 @@ npm test
 ## 协作、提交与交付
 
 按任务复杂度分工。主代理保留全局目标、依赖、优先级和最终验收判断。简单机械核对交轻量模型，例如链接检查、清单整理和状态读取。中等实现、文档整理与 GitHub 操作由 Terra 负责。具体审查可由主代理或轻量模型完成，依风险与所需专业判断选择。条件允许时使用不同模型或供应商独立复核。执行者遇到具体难点，可按需请 GPT-6 Astra 提供建议，任务归属和验收责任仍由原角色承担。
+
+优先用 Terra 执行短迭代。首轮先从用户实际使用的入口跑通一条可交付的正常路径，以端到端验收确认结果。在已知风险处补关键不变量的验证，复用已有基础设施及其验证。每轮继续遵守严格 TypeScript、lint、CI 和原始数据保护要求。
 
 | 阶段 | 检查项 |
 | --- | --- |

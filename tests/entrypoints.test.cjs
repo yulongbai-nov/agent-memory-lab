@@ -72,7 +72,7 @@ test('daily refreshes the Wiki at the effective instant without another write', 
   execFileSync(process.execPath, [join(__dirname, '..', 'bin', 'seed-demo.cjs'), dir]);
   const args = ['--dir', dir, '--project', 'demo'];
   const before = run(['current', ...args, '--topic', 'Release checklist'])[0];
-  const boundary = '2030-02-01T00:00:00.000Z';
+  const boundary = '2030-02-01T00:00:00.123900Z';
   run(['annotate', ...args, '--kind', 'change', '--target', JSON.stringify(before.citation),
     '--id', 'synthetic-future-change', '--revises', before.review_id, '--valid-time', boundary,
     '--topic', 'Release checklist', '--text', 'Release moves to Wednesday.']);
@@ -81,22 +81,40 @@ test('daily refreshes the Wiki at the effective instant without another write', 
   const op = await operations({ dir, project: 'demo' });
   const noImport = () => { throw Error('No imports expected'); };
   const refresh = now => dailyReview(op, [], noImport, { now: () => new Date(now) });
-  const first = await refresh('2030-01-31T23:59:58.000Z');
+  const first = await refresh('2030-02-01T00:00:00.123Z');
   const [snapshot] = await readdir(join(dir, 'derived'));
   const wikiText = async () => {
     const { wiki } = JSON.parse(await readFile(join(dir, 'derived', snapshot), 'utf8'));
     return wiki.find(row => row.topic === 'Release checklist').text;
   };
   assert.equal(await wikiText(), 'Release stays on Tuesday.');
-  assert.equal(first.next_transition, boundary);
-  assert.equal((await refresh('2030-01-31T23:59:59.999Z')).snapshotChanged, false);
-  const activated = await refresh(boundary);
+  assert.equal(first.next_transition, '2030-02-01T00:00:00.1239Z');
+  assert.equal((await refresh('2030-02-01T00:00:00.123Z')).snapshotChanged, false);
+  const activated = await refresh('2030-02-01T00:00:00.124Z');
   assert.equal(activated.snapshotChanged, true);
   assert.equal(activated.next_transition, null);
   assert.equal(activated.annotations, first.annotations);
   assert.equal(activated.archivedVersions, first.archivedVersions);
   assert.equal(await wikiText(), 'Release moves to Wednesday.');
-  assert.equal((await refresh('2030-02-01T00:00:00.001Z')).snapshotChanged, false);
+  assert.equal((await refresh('2030-02-01T00:00:00.125Z')).snapshotChanged, false);
+  const { createHash } = require('node:crypto');
+  const { writeFile } = require('node:fs/promises');
+  const { decisionBoundaries } = require('../lib/query.cjs');
+  const snapshotPath = join(dir, 'derived', snapshot);
+  const existing = JSON.parse(await readFile(snapshotPath, 'utf8'));
+  const versions = await op.archive.listVersionSummaries(op.scope);
+  const annotations = await op.archive.listAnnotations(op.scope);
+  const times = decisionBoundaries(await op.archive.listItems(op.scope, {reviewOnly:true}), annotations);
+  const legacyFingerprint = createHash('sha256').update(JSON.stringify([
+    'derived-v3', new Set(times.map(time => time.ms)).size,
+    versions.map(record => record.versionId).sort(), annotations.map(record => record.id).sort()
+  ])).digest('hex');
+  await writeFile(snapshotPath, JSON.stringify({...existing, fingerprint: legacyFingerprint}));
+  const upgraded = await refresh('2030-02-01T00:00:00.125Z');
+  assert.equal(upgraded.snapshotChanged, true);
+  assert.equal(upgraded.newlyQueued, 0);
+  assert.deepEqual(JSON.parse(await readFile(snapshotPath, 'utf8')).pending, existing.pending);
+  assert.equal((await refresh('2030-02-01T00:00:00.125Z')).snapshotChanged, false);
 });
 
 test('private originals preserve exact bytes even when redacted previews are identical', async t => {

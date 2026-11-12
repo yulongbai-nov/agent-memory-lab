@@ -1,6 +1,7 @@
 "use strict";
+type TimeParts = { ms: number; tail: string };
 // Compare the full source fraction without rounding or changing stored text.
-function sourceInstant(value: unknown): { ms: number; tail: string } | null {
+function sourceInstant(value: unknown): TimeParts | null {
   if (typeof value !== "string") return null;
   const m =
     /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.(\d{1,9}))?(Z|[+-]\d\d:\d\d)$/.exec(
@@ -36,6 +37,34 @@ function sourceInstant(value: unknown): { ms: number; tail: string } | null {
   return Number.isFinite(n)
     ? { ms: n, tail: (fraction || "").slice(3).replace(/0+$/, "") }
     : null;
+}
+export type DecisionTime = TimeParts & { iso: string };
+export function decisionTime(value: unknown): DecisionTime | null {
+  const exact = sourceInstant(value);
+  let ms: number;
+  if (exact) ms = exact.ms;
+  else {
+    try {
+      ms = Date.parse(value as string);
+    } catch {
+      return null;
+    }
+  }
+  if (!Number.isFinite(ms)) return null;
+  const tail = exact?.tail || "";
+  const iso = new Date(ms).toISOString().slice(0, -1) + tail + "Z";
+  return { ms, tail, iso };
+}
+export function compareDecisionTimes(a: TimeParts, b: TimeParts): number {
+  return a.ms < b.ms
+    ? -1
+    : a.ms > b.ms
+      ? 1
+      : a.tail < b.tail
+        ? -1
+        : a.tail > b.tail
+          ? 1
+          : 0;
 }
 export function compareBound(value: unknown, bound: string): number | null {
   if (sourceInstant(value) === null || sourceInstant(bound) === null)
@@ -118,15 +147,6 @@ export function compareTime(
     y = sourceInstant(b);
   if (x === null) return y === null ? 0 : 1;
   if (y === null) return -1;
-  const result =
-    x.ms === y.ms
-      ? x.tail < y.tail
-        ? -1
-        : x.tail > y.tail
-          ? 1
-          : 0
-      : x.ms < y.ms
-        ? -1
-        : 1;
+  const result = compareDecisionTimes(x, y);
   return descending ? -result : result;
 }

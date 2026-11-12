@@ -228,9 +228,8 @@ test("versioned candidates publish and explicit decision/todo reviews retain lin
     "proposed",
   ]);
   assert.equal(decision.code, 0);
-  assert.equal(decision.output.candidateReview.candidate.basis, "uncertain");
   assert.equal(decision.output.basis, "proposed");
-  assert.match(decision.output.candidateReview.reviewedAt, /^\d{4}-\d\d-\d\dT/);
+  assert.match(decision.output.reviewedAt, /^\d{4}-\d\d-\d\dT/);
   const replay = f.cmd([
     "draft-review",
     "--id",
@@ -249,10 +248,18 @@ test("versioned candidates publish and explicit decision/todo reviews retain lin
     decision.output.id,
   ]).output;
   assert.equal(showReview.snapshotStatus, "verified");
-  assert.equal(
-    showReview.review.reviewedAt,
-    decision.output.candidateReview.reviewedAt,
-  );
+  assert.equal(showReview.review.reviewedAt, decision.output.reviewedAt);
+  const queryArchive = await openArchive({ dir: f.dir, readOnly: true });
+  try {
+    const visible = await require("../lib/query.cjs")
+        .createQuery(queryArchive)
+        .annotations(scope),
+      entry = visible.find((x) => x.id === decision.output.id);
+    assert.equal("candidateReview" in entry, false);
+    assert.equal(entry.candidateLineage.candidateId, snapshot + ":1");
+  } finally {
+    queryArchive.close?.();
+  }
   const current = f.cmd(["current", "--topic", "Synthetic"]).output;
   assert.equal(current[0].label, "待决定");
   assert.equal(current[0].candidateLineage.candidateId, snapshot + ":1");
@@ -323,6 +330,45 @@ test("versioned candidates publish and explicit decision/todo reviews retain lin
   } finally {
     archive.close?.();
   }
+  const snapshotFile = join(
+      f.dir,
+      "local-derive",
+      "draft-v2",
+      sha(JSON.stringify([scope.owner, scope.project])),
+      "snapshots",
+      snapshot + ".json",
+    ),
+    backup = snapshotFile + ".saved";
+  await fs.rename(snapshotFile, backup);
+  let detail = f.cmd([
+    "draft-review-show",
+    "--review-id",
+    decision.output.id,
+  ]).output;
+  assert.equal(detail.snapshotStatus, "missing");
+  assert.equal(detail.candidate.evidence[0].quoteStatus, "verified-original");
+  await fs.writeFile(snapshotFile, "{}", { mode: 0o600 });
+  detail = f.cmd([
+    "draft-review-show",
+    "--review-id",
+    decision.output.id,
+  ]).output;
+  assert.equal(detail.snapshotStatus, "invalid");
+  await fs.rm(snapshotFile);
+  await fs.rename(backup, snapshotFile);
+  const original = f.original();
+  await fs.rename(original, original + ".saved");
+  detail = f.cmd([
+    "draft-review-show",
+    "--review-id",
+    decision.output.id,
+  ]).output;
+  assert.equal(
+    detail.candidate.evidence[0].quoteStatus,
+    "archived-preview-only",
+  );
+  assert.equal("originalSpan" in detail.candidate.evidence[0], false);
+  await fs.rename(original + ".saved", original);
 });
 
 test("versioned declared full projection accepts long repeated source text by exact offsets", async (t) => {
@@ -406,4 +452,99 @@ test("versioned declared full projection accepts long repeated source text by ex
   ]).output;
   assert.equal(d.candidate.evidence[0].quoteStatus, "verified-original");
   assert.equal(d.candidate.evidence[0].originalSpan.startUtf16, start);
+});
+
+test("review capsule includes only the chosen candidate projection for a shared source", async (t) => {
+  const f = await fixture(t),
+    text = "Alpha phrase. Beta phrase.",
+    row = await f.append(text),
+    sourceId = Object.values(row.source).slice(0, 3).join("/");
+  const projection = (start, end) => ({
+    source: sourceId,
+    item: row.item.id,
+    version: row.versionId,
+    kind: "fragment",
+    fieldPath: "data.text",
+    originalSha256: row.item.metadata.original.sha256,
+    startUtf16: start,
+    endUtf16: end,
+    startUtf8: Buffer.byteLength(text.slice(0, start)),
+    endUtf8: Buffer.byteLength(text.slice(0, end)),
+    previewStartUtf16: start,
+    previewEndUtf16: end,
+  });
+  const p1 = projection(0, 13),
+    p2 = projection(14, text.length),
+    evidence = (p) => {
+      const { source, item, version, ...originalSpan } = p;
+      return {
+        source,
+        item,
+        version,
+        quote: text.slice(p.previewStartUtf16, p.previewEndUtf16),
+        originalSpan,
+      };
+    };
+  const receipt = {
+      formatVersion: 2,
+      scope,
+      producer: {
+        writerProtocol: "generic",
+        recipeIdentity: "d".repeat(64),
+        outputProtocol: "candidate-v2",
+      },
+      generatedAt: null,
+      inputProjections: [p1, p2],
+      candidates: [
+        {
+          kind: "decision",
+          basis: "confirmed",
+          claim: "Alpha",
+          evidence: [evidence(p1)],
+        },
+        {
+          kind: "decision",
+          basis: "uncertain",
+          claim: "Beta",
+          evidence: [evidence(p2)],
+        },
+      ],
+    },
+    bytes = Buffer.from(JSON.stringify(receipt)),
+    file = join(f.dir, "shared.json");
+  await fs.writeFile(file, bytes, { mode: 0o600 });
+  const published = f.cmd([
+    "draft-publish",
+    "--receipt",
+    file,
+    "--receipt-sha256",
+    sha(bytes),
+    "--expect-latest",
+    "none",
+  ]).output;
+  const accepted = f.cmd([
+    "draft-review",
+    "--id",
+    published.snapshot + ":1",
+    "--text",
+    "Reviewed alpha",
+    "--topic",
+    "Alpha",
+    "--basis",
+    "confirmed",
+  ]).output;
+  const archive = await openArchive({ dir: f.dir, readOnly: true });
+  try {
+    const annotation = await archive.getAnnotation({
+      ...scope,
+      id: accepted.id,
+    });
+    assert.equal(annotation.candidateReview.inputProjections.length, 1);
+    assert.equal(
+      annotation.candidateReview.inputProjections[0].previewStartUtf16,
+      0,
+    );
+  } finally {
+    archive.close?.();
+  }
 });

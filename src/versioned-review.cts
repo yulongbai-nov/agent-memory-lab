@@ -140,7 +140,7 @@ async function paths(archive: Archive, scope: Scope, create: boolean) {
     ),
     b = await dirPrivate(a, "draft-v2", create),
     c = await dirPrivate(b, scopeKey(scope), create),
-    d = await dirPrivate(c, "snapshots", create);
+    d = create ? await dirPrivate(c, "snapshots", true) : join(c, "snapshots");
   return { dir: c, snapshots: d, latest: join(c, "latest.json") };
 }
 async function syncDirectory(file: string) {
@@ -188,6 +188,7 @@ async function latest(file: string): Promise<string | null> {
 }
 async function snapshotAt(folder: string, id: string, scope: Scope) {
   if (!hex.test(id)) throw Error("Invalid snapshot ID");
+  await dirPrivate(dirname(folder), "snapshots", false);
   const bytes = await readPrivate(join(folder, id + ".json"));
   if (hash(bytes.toString("utf8")) !== id)
     throw Error("Snapshot hash mismatch");
@@ -558,7 +559,7 @@ async function review(options: {
     const id =
       "candidate-review-" +
       hash(JSON.stringify([scope.owner, scope.project, options.id]));
-    return await archive.addAnnotation({
+    const accepted = (await archive.addAnnotation({
       id,
       scope,
       kind: candidate.kind,
@@ -567,7 +568,16 @@ async function review(options: {
       ...(options.basis ? { basis: options.basis } : {}),
       target,
       candidateReview: capsule,
-    });
+    })) as { candidateReview: { reviewedAt: string } };
+    return {
+      status: "reviewed",
+      id,
+      kind: candidate.kind,
+      ...(options.basis ? { basis: options.basis } : {}),
+      reviewedAt: accepted.candidateReview.reviewedAt,
+      candidateId: options.id,
+      candidateSha256: capsule.candidateSha256,
+    };
   } finally {
     archive.close?.();
   }

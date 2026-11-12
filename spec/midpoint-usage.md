@@ -22,7 +22,7 @@ node bin/memory.cjs coverage --project work
 
 每个根目录按字典顺序枚举，`nextOffset` 可传给 `--offset` 继续。重新扫描同页会读取原有 checkpoint、重叠补扫并尝试修复未解决的坏行。推进断点时同时检查位置和覆盖版本。单个已知文件用 `ingest --file`，用稳定的实例和会话标识。目录模式和单文件模式只有在会话标识一致时才会共享 checkpoint。先用有限页确认覆盖和缺失再扩大导入。明确报告不支持的私有格式、截断和改写缺口。坏行修复会轮转；被截短而找不到的位置仍留在覆盖缺口中。DSH 序号只在补扫读到相应源记录时恢复，未找到的序号继续标为缺失。每日和前台轮询会按最近会话和持久目录游标分配预算，失败的会话保留重试，逐会话复用 checkpoint。手动历史定位仍可用 offset。使用 `watch --manifest <private-json> --interval 60` 可在前台连续补扫。两轮合成验证中，第二轮只摄取新增记录。生命周期 hook 与实时订阅尚未接通。
 
-对旧版本中 `record-size-limit` 的原件，可用 `repair-original --manifest <private-json> --id <item-id> --revision <version-id>` 按精确版本逐条重抓。它只接受清单中能唯一解析的同一作用域和来源，限制读取源前缀至 256 MiB，并核对当前记录的规范化身份及内容。成功时追加当前观测，原有版本和 checkpoint 不变；当前源字节不能证明旧版本当时的原始字节。源缺失、已改变、超出限制或仍无法归档时报告失败；不会自动处理其他条目。
+对旧版本中标记为 `record-size-limit` 的原件，从证据结果取条目 ID 和归档版本 ID。用 `repair-original --manifest <private-json> --id <item-id> --revision <archive-version-id>` 逐条补录。命令从私有清单解析同一作用域的唯一来源，读取至多 256 MiB 源前缀，并核对当前记录的规范化标识和修订摘要。成功时以当前字节追加新观察。历史版本保留原有证据状态，采集 checkpoint 保留原位置与覆盖记录。来源缺失、内容变化、超出限制或无法归档时，命令返回失败。
 
 Codex 的目录清单可同时指定 `root` 和 `archiveRoot`。活跃会话移动到归档目录时，导入器用常规 rollout 文件名和会话头核对身份，继续使用原 checkpoint 和条目键。两处字节完全一致的副本只读取一次。文件不同或两种旧身份都存在时，留待复核。旧身份和原件继续可读。
 

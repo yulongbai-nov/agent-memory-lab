@@ -254,6 +254,8 @@ async function main() {
     );
     assert.equal(typeof snapshot.readChatgptSnapshot, "function");
     assert.equal(typeof ontology.rebuildProjection, "function");
+    const repair = require(join(installed, "lib", "repair-original.cjs"));
+    assert.equal(typeof repair.repairOriginal, "function");
     const reference = { source: "fixture", item: "item", version: "revision" };
     const candidates = validation.validateCandidates(
       {

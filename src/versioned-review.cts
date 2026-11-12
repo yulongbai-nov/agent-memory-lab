@@ -314,7 +314,11 @@ async function evidenceDetails(
         status = "verified-original";
         break;
       }
-      if (["missing-locally", "source-only"].includes(projected.status))
+      if (
+        ["missing-locally", "source-only", "too-large"].includes(
+          projected.status,
+        )
+      )
         status = "archived-preview-only";
     }
     details.push({

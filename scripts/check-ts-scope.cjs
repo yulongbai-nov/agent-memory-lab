@@ -8,6 +8,7 @@ const typescript = [
   "src/graph-wiki-view.cts",
   "src/legacy-input-binding.cts",
   "src/query-time.cts",
+  "src/repair-original.cts",
   "src/bounded-memory-find.cts",
   "src/bounded-memory-read.cts",
   "src/chatgpt-snapshot.cts",
@@ -28,6 +29,10 @@ const typescript = [
 ];
 const lintedJavaScript = [
   "lib/query-time.cjs",
+  "lib/repair-original.cjs",
+  "tests/repair-original.test.cjs",
+  "tests/originals-large.test.cjs",
+  "tests/large-original-acceptance.test.cjs",
   "tests/query-time.test.cjs",
   "benchmark/writer-luna/proxy-384.cjs",
   "benchmark/writer-luna/run.cjs",

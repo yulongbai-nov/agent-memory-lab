@@ -12,7 +12,7 @@
 
 - 只读取按 `owner/project` 推导的 `latest-*.json`。沿用 Writer 先完成缓存和草稿、最后原子替换 `latest` 的发布顺序。一次命令只读一个已打开的快照，既不拼接新旧批次，也不从缓存、TXT、队列或相邻项目补内容。读时检查私有权限、普通文件、非链接、96 KiB 和完整结构。坏文件返回 `invalid-draft`，不输出文件名、内容或堆栈。输入错误、无效快照和失效 ID 返回简短 JSON 状态及非零退出码。空结果无需读证据；旧档无投影偏移仍可标示其证据限制。
 - 每项最多三处证据。详情只查同一 `owner/project/harness/instance/session/item/version` 的原始归档版本，并检查同一完整来源身份的最新已归档版本。当前版本标 `current`，存在较新版本标 `older-version`，旧版本仍是合法证据，逐条使用原引用。精确行缺失、错项目和错来源统一标 `missing`，省去未核实的引用元组及候选正文。即使别处有同名条目，也不借用。
-- 原件状态单独显示 `verified`、`source-only`、`missing-locally`、`integrity-failed` 或 `unknown`。详情的本机校验器仅为精确引用读取至多 1 MiB 原件，核对哈希、字段及 UTF-8/UTF-16 半开区间。只有引文同时匹配同一精确版本的合格脱敏输入投影、归档预览和原件跨度，才标 `verified-original` 并返回定位。无偏移的旧档或原件缺失时，精确匹配归档预览的引文标 `archived-preview-only`。不匹配或完整性失败时标 `unverified` 并省去引文。任一引文未能核实时省去候选正文。输出不含原件正文、文件路径、原始模型结果或输入提示。
+- 原件状态单独显示 `verified`、`source-only`、`missing-locally`、`integrity-failed`、`too-large` 或 `unknown`。精确引用的字段和 UTF-8/UTF-16 半开区间校验最多装入 1 MiB 原件。较大的原件按块校验哈希。只有引文同时匹配同一精确版本的合格脱敏输入投影、归档预览和原件跨度，才标 `verified-original` 并返回定位。无偏移的旧档、原件缺失或原件超过模型投影的 1 MiB 上限时，精确匹配归档预览的引文标 `archived-preview-only`。不匹配或完整性失败时标 `unverified` 并省去引文。任一引文未能核实时省去候选正文。输出不含原件正文、文件路径、原始模型结果或输入提示。
 
 ## 合成验收
 

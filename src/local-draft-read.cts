@@ -43,6 +43,7 @@ type OriginalStatus =
   | "source-only"
   | "missing-locally"
   | "integrity-failed"
+  | "too-large"
   | "unknown";
 type Archive = {
   dir: string;

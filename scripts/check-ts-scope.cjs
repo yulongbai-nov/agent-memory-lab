@@ -83,6 +83,7 @@ const lintedJavaScript = [
   "tests/daily-scan-synthetic.test.cjs",
   "tests/local-draft-read.test.cjs",
   "tests/versioned-review.test.cjs",
+  "tests/versioned-review-portable.test.cjs",
 ];
 const files = execFileSync(
   "git",

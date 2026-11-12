@@ -18,3 +18,28 @@
 `effective-boundary` 用 11:59 与 12:00 检查适用决定 ID 切换，同时保留旧纠正历史时间未知。`dependency-time` 在同一适用时点比较两个知晓截止，只验证侧车关系。它们可以由当前查询和投影核对，不要求首轮浏览器暴露两个历史视图。后续对照 Graphiti 时固定此资料、问题和预期，分别记录框架的时间、精确引用和来源可用性结果，以及构建和查询开销。
 
 此夹具是验收输入。归档与现有查询可播种检查。浏览器交互、组件适配、私有资料和任何框架对照分别记录运行结果。
+
+## 时序对照
+
+两个脚本读取同一个 `scenario.json`。归档侧通过实际查询返回决定，再沿查询结果回查作用域、会话、轮次、版本和原件可用性。Graphiti 侧通过库写入显式评审过的关系，在临时 Kuzu 数据库执行 Graphiti 生成的时间筛选，并按 UUID 取回 episode。预期答案用于验收断言。
+
+```sh
+npm ci --ignore-scripts
+npm run build
+node benchmark/graph-wiki/run-temporal-baseline.cjs
+
+graphiti_venv=$(mktemp -d)
+uv venv --python 3.12.15 "$graphiti_venv"
+uv pip install --python "$graphiti_venv/bin/python" -r benchmark/graph-wiki/graphiti-temporal-requirements.txt
+"$graphiti_venv/bin/python" benchmark/graph-wiki/run-graphiti-temporal.py
+```
+
+Node 回放随项目 CI 运行。Graphiti 回放是可选实验，在 macOS arm64、Python 3.12.15、Graphiti 0.31.2 固定提交和 Kuzu 0.11.3 上验收。安装依赖需要网络。运行时禁用 Graphiti 遥测，使用进程内数据库，不调用模型。该 Graphiti 版本已标记 Kuzu 后端弃用。 [固定版本配置](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/pyproject.toml) · [Kuzu 驱动](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/graphiti_core/driver/kuzu_driver.py)
+
+| 观察 | 现有归档 | Graphiti 回放 |
+| --- | --- | --- |
+| 决定何时生效 | 11:59 为 `route-decision`，12:00 为 `route-change`。 | 显式写入适用区间后相同。若把 11:00 的 episode 时间写入适用字段，11:59 已错误返回新决定。 |
+| 何时知道任务依赖 | 固定 12:30 的适用时点。知晓截止从 12:30 移到 13:00 时，依赖从无变有。 | 显式将 12:45 写入 `created_at` 可复现筛选。实际业务知晓时间需要单独保存，重建时生成的创建时间可能改变查询结果。 |
+| 来源与纠正 | DSH 可回查原件，Codex 可回查精确版本，纠正的历史时间为未知。 | episode 能返回应用显式保存的来源引用。回放未验证原件字节，也未应用纠正或抽取事实。 |
+
+适用区间使用 `valid_at <= asOf`，结束时间为空或严格晚于 `asOf`。Graphiti 在其模型契约中区分未来计划的表达时间和未来发生时间。表中提前切换使用显式替代输入模拟该映射，未运行模型抽取。此对照不评定性能或框架胜负。 [时间筛选源码](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/graphiti_core/search/search_filters.py) · [边模型](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/graphiti_core/edges.py)

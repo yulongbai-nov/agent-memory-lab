@@ -31,6 +31,12 @@
 
 [Graphiti OSS](https://github.com/getzep/graphiti/tree/ebef986a0b2360211b65751c111cacb4a7d790eb) 是研究候选，尚未采用；不能将 Zep Cloud 能力当作 OSS 能力。其 `valid_at`、`invalid_at`、`created_at`、`expired_at` 和 episode 引用本身不自动满足本项目完整的精确来源及历史语义，所核[代码](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/graphiti_core/edges.py)中，`valid_at` 对未来计划可能使用 episode reference time，不等于决定未来的实际适用时间；重建图的 `created_at` 也不能冒充权威系统首次获知时间。须逐字段映射，并以相同案例验证缺口及重建。首批不安装全部候选库。
 
+## Graphiti 时序对照
+
+同一 Moonbridge 合成案例已在现有归档查询和固定版本 Graphiti／Kuzu 上回放。现有实现区分 11:59 与 12:00，能回查 DSH 原件和 Codex 精确来源，并将缺少依据的历史纠正时间保留为未知。Graphiti 能对显式写入的适用区间作数据库过滤，按 episode UUID 取回手工绑定的来源。用记录时间代替生效时间会让新决定提前生效。Graphiti 的重建时间也无法提供权威首次获知时间。两项时间与来源映射需由项目保存。
+
+此回放验证存储和筛选能力。Graphiti 未执行自动抽取、纠正或原件验证，所用 Kuzu 后端已标为弃用。Graphiti 仍是待评估的派生图候选。复现及各项验收边界见[时序对照](../benchmark/graph-wiki/README.md#时序对照)。
+
 ## 待决定及推进顺序
 
 待决定：Wiki 纠正和自动整理规则、最小 ontology 概念与关系集合、UI 布局；是否同时提供“以当前知识重建过去”和“当时系统所知”两种历史视图；以及使用一个物理引擎，还是一个权威来源加可重建图索引。这些均非已批准的实现方案。Graphiti 是否能表达精确来源、适用时间与首次获知时间，以及其存储和重建成本，需在同一案例中验证后决定。

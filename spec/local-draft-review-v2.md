@@ -1,0 +1,23 @@
+# 本机版本化草稿审阅
+
+本文约定如何显式发布已有候选、审阅决定和待办，以及从审核记录回查生成候选。命令使用明确的本机 `owner` 和 `project` 范围。[旧版草稿读取契约](local-draft-read.md)
+
+## 发布和快照
+
+- `draft-publish` 读取本机规范化 receipt，核对给定的 SHA-256、范围、格式、文件权限和原件。Receipt 声明 `formatVersion: 2`、`scope`、`producer`、`generatedAt`、`inputProjections` 和 `candidates`，可另附 `originReceiptSha256`。`formatVersion` 与 `producer.outputProtocol: "candidate-v2"` 决定读取规则。`producer` 中的 `writerProtocol`、`recipeIdentity` 和 `outputProtocol` 是报告元数据。发布器记录本机操作员接纳的 receipt 摘要。摘要校验说明文件内容匹配，生产者身份仍为报告状态。
+- 每批至多四个候选，每项一到三处精确证据。Receipt 和快照分别最多 96 KiB。决定候选的 `basis` 只表达生成时的业务判断，候选状态固定为「待核实」。原件按已归档版本、字段、哈希和声明的 UTF-8、UTF-16 范围核验，沿用可见内容及脱敏规则。
+- 快照按完整文件的 SHA-256 存为不可变文件。发布在范围锁内写快照，并按 `--expect-latest` 原子更新指针。相同当前快照可重放。指针已有更新时，旧期望会被拒绝。
+- `draft-list --format v2` 列最新一批。`draft-show --format v2 --id ID` 打开指定的 `快照摘要:序号`。只要旧快照仍保留，就可用旧 ID 定位。省略 `--format` 时使用原来的 v1 读取行为。v2 发布使用独立指针，默认 writer 继续使用 v3。
+
+## 审核和回查
+
+- `draft-review` 接受 `decision` 和 `todo`。操作员明确提供正文和主题，审阅决定时另选 `basis`。一项有多处证据时，用 `--primary` 指定现有审核入口的主引用。全部一到三处证据须核验为 `verified-original`，并完整保留。较新的条目版本出现后，仍可审核原件可核验的旧精确版本。
+- 同一候选在同范围的审核 ID 稳定。同样的审核请求并发或重放只追加一次。系统首次接受审核时赋 `candidateReview.reviewedAt`，重试和同步保留首值。它与生成时间、来源事件及决定生效时间分别记录，用于回查人工审核。更改已提交的审核仍走已有的人工流程。读取可见四种候选，决定变更和解释纠正继续使用 `annotate` 的既有入口。
+- 审核记录随同至多 64 KiB 的 `candidateReview` 胶囊追加。它保存原候选的类型、正文、依据、全部精确引文和匹配投影，以及快照摘要、序号、候选摘要和生成元数据。两端支持该字段后，胶囊随现有 annotation 同步。常规 `current`、Wiki、图和任务时间线只展示简短回链。默认 MCP 仍使用既有五个工具。
+- `draft-review-show --review-id ID` 打开该范围的审核正文和生成候选，显示首次审核时间和各处证据当前的核验级别。原件缺失且预览可以核对时标明预览级别。引文损坏或无法核验时省去相应引文。
+- `snapshotStatus` 单独说明整批归属。完整快照的文件哈希、候选序号和摘要匹配时为 `verified`。只有已同步的胶囊时为 `missing`，仍可核对已接受审核中的候选。完整文件存在但校验失败时为 `invalid`。生产者元数据在这些状态下均保持报告属性。
+
+## 合成验收
+
+用保存的公开合成候选验证决定、待办和三处证据。检查旧快照 ID、较旧源版本、跨范围与损坏引用，复验指针竞争和审核重放。验证待办关闭后仍可回查，以及只同步审核和源版本时的胶囊回查。所有命令使用既有本机归档，发布及人工审核流程均可离线完成。
+

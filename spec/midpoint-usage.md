@@ -104,6 +104,56 @@ node bin/memory.cjs draft-show --dir <private-dir> --owner local --project <proj
 
 日常确定性整理仍先运行。可为 `daily` 或 `bin/daily-launchd.cjs` 显式添加 `--local-draft`，每次最多处理一个本地批次。代码默认关闭。为 LaunchAgent 启用时可保留原配置备份。去掉此参数并重新加载任务即可停用草稿阶段。`derived/local-draft-*.json` 分别记录本地与外部模型调用数、校验状态和安全计数。外部私有语义处理继续标记为 `requires-user-consent`，召回基准保持 `gpt-6-luna` low。
 
+### 显式发布和审核版本化候选
+
+以下示例使用已归档合成资料和本机规范化 receipt。将变量替换成你核实的档案目录、范围、receipt 路径和摘要。第一次发布使用 `--expect-latest none`。后续发布使用刚列出的当前快照摘要。
+
+```sh
+node bin/memory.cjs draft-publish \
+  --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT" \
+  --receipt "$MEMORY_RECEIPT" --receipt-sha256 "$MEMORY_RECEIPT_SHA256" \
+  --expect-latest none
+
+node bin/memory.cjs draft-list --format v2 \
+  --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT"
+
+node bin/memory.cjs draft-show --format v2 --id "$MEMORY_CANDIDATE_ID" \
+  --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT"
+```
+
+从列表复制完整候选 ID。详情给出「待核实」状态、生成时的业务依据和精确引文。替换最新快照后，仍可按完整旧 ID 打开保留的 v2 快照。生产者字段用于记录报告信息。Receipt 摘要用于核对发布输入。
+
+审阅决定时，核对所有证据并明确选择业务依据。若证据表明一项提议仍待选择，可以使用 `proposed` 并填写实际认可的正文。多处证据时另加 `--primary 1` 等参数选择主要引用。审核记录保存全部证据。
+
+```sh
+node bin/memory.cjs draft-review --id "$MEMORY_DECISION_ID" \
+  --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT" \
+  --topic '合成演示安排' --basis proposed --text '合成演示时段仍待选择。'
+
+node bin/memory.cjs current --topic '合成演示安排' \
+  --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT"
+```
+
+审阅待办时填写明确的任务正文，省略 `--basis`。通过后可在 `task-list` 找到。用[状态观察命令](task-state-observations.md)记录暂停或结束，再从 `timeline` 回查原审核。
+
+```sh
+node bin/memory.cjs draft-review --id "$MEMORY_TODO_ID" \
+  --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT" \
+  --topic '合成演示安排' --text '准备合成演示清单。'
+
+node bin/memory.cjs task-list \
+  --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT"
+
+node bin/memory.cjs draft-review-show --review-id "$MEMORY_REVIEW_ID" \
+  --dir "$MEMORY_DIR" --owner "$MEMORY_OWNER" --project "$MEMORY_PROJECT"
+```
+
+从审核结果或查询复制 `MEMORY_REVIEW_ID`。详情分别显示生成候选、人工审核和证据核验结果，并保留首次接受审核的 `reviewedAt`。同步后只有审核胶囊时，仍可回查原候选，`snapshotStatus` 标为 `missing`。完整快照通过哈希及成员校验后才显示 `verified`。新审核须核实所有原件，旧源版本仍可按精确引用审核。
+
+指针期望过期时重新列表，审核请求重试时使用同一候选 ID 及同样的人工内容。变更和纠正继续用现有 `annotate`。既有 v1 草稿仍使用省略 `--format` 的命令。此流程使用正常本机 CLI，默认 writer 和只读入口继续原有方式。[版本化草稿审阅契约](local-draft-review-v2.md)
+
+
+
 ## 私有 CouchDB 同步
 
 给每个 owner/project 使用专用私有数据库。先通过授权管理员完成单节点初始化、建库和账号角色分配，再使用 `provision-hub --project work --couch-url <database-url>` 安装权限规则。运行时用私有环境注入 `MEMORY_LAB_COUCH_AUTHORIZATION`，URL 不带凭据。管理员仅用于配置，普通设备使用最小角色。非 loopback URL 要求 HTTPS。避免在浏览器、公共日志、shell 历史或公共仓库保存任何账号密钥。

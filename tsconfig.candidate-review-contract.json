@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true },
+  "files": [
+    "tests/candidate-review-contract.types.cts",
+    "src/candidate-review-contract.cts"
+  ]
+}

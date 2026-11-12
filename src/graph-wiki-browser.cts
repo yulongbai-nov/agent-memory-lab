@@ -229,6 +229,99 @@ function exactCitation(value: unknown): Citation | undefined {
     },
   };
 }
+const taskStateLabels = new Map([
+  ["unmarked", "未标记结束"],
+  ["open", "未完成"],
+  ["paused", "已暂停"],
+  ["completed", "已完成"],
+  ["cancelled", "已取消"],
+  ["conflict", "状态冲突"],
+]);
+function appendReviewedDetails(
+  container: HTMLElement,
+  row: unknown,
+  openEvidence: (citation: Citation) => Promise<void>,
+  onError: (error: unknown) => void,
+): void {
+  const object = (value: unknown): Record<string, unknown> | undefined =>
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : undefined;
+  const text = (value: unknown): string =>
+    typeof value === "string" ? value : "";
+  const addDetail = (value: string, label?: string, citation?: Citation) => {
+    const p = document.createElement("p");
+    p.textContent = value;
+    if (citation && label) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.onclick = () => void openEvidence(citation).catch(onError);
+      p.append(" ", button);
+    }
+    container.append(p);
+  };
+  const entry = object(row);
+  if (!entry) return;
+  if (Array.isArray(entry.annotations)) {
+    for (const raw of entry.annotations as unknown[]) {
+      const note = object(raw);
+      if (!note) continue;
+      if (note.kind === "correction") {
+        const citation = exactCitation(note.evidence);
+        const unavailable = citation
+          ? ""
+          : note.evidence == null
+            ? "未附来源证据"
+            : "来源引用不完整";
+        addDetail(
+          ["纠正", text(note.text), unavailable].filter(Boolean).join(" · "),
+          "查看纠正证据",
+          citation,
+        );
+      } else if (note.kind === "annotation")
+        addDetail(`批注 · ${text(note.text)}`);
+    }
+  }
+  if (entry.kind !== "todo") return;
+  const task = object(entry.task_state);
+  if (!task) return;
+  addDetail(
+    `任务状态 · ${text(task.label) || taskStateLabels.get(text(task.state)) || "未知"}`,
+  );
+  if (!Array.isArray(task.heads)) return;
+  for (const raw of task.heads as unknown[]) {
+    const head = object(raw);
+    if (!head) continue;
+    const kind = head.evidenceKind;
+    const label =
+      kind === "source"
+        ? "来源证据"
+        : kind === "operator"
+          ? "操作员声明"
+          : "证据类型未知";
+    const citation =
+      kind === "source" ? exactCitation(head.evidence) : undefined;
+    const unavailable =
+      kind === "source" && !citation
+        ? head.evidence == null
+          ? "未附来源证据"
+          : "来源引用不完整"
+        : "";
+    addDetail(
+      [
+        taskStateLabels.get(text(head.state)) || "状态未知",
+        text(head.text),
+        label,
+        unavailable,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      "查看状态证据",
+      citation,
+    );
+  }
+}
 let overviewGeneration = 0;
 async function projectOverview(
   openEvidence: (citation: Citation) => Promise<void>,
@@ -320,6 +413,7 @@ function setup(
       setup: typeof setup;
       showGraph: typeof showGraph;
       clearGraph: typeof clearGraph;
+      appendReviewedDetails: typeof appendReviewedDetails;
     };
   }
-).graphWiki = { setup, showGraph, clearGraph };
+).graphWiki = { setup, showGraph, clearGraph, appendReviewedDetails };

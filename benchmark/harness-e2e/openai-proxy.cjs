@@ -75,7 +75,8 @@ function memoryToolChoice(choice, tools = []) {
   // are supported. Do not silently translate unsupported choices to auto.
   throw Object.assign(new Error('tool choice rejected'),{code:'tool-choice-rejected'});
 }
-function buildRequest(body) {
+function buildRequest(body, outputTokens=LIMITS.outputTokens) {
+  if (!Number.isSafeInteger(outputTokens) || outputTokens < 1 || outputTokens > LIMITS.outputTokens) throw Error('invalid output budget');
   if (!body || typeof body !== 'object' || Array.isArray(body) || body.model !== MODEL ||
       body.reasoning?.effort !== EFFORT || (typeof body.input !== 'string' && !Array.isArray(body.input)) ||
       body.previous_response_id || body.conversation || !safeInput(body.input) ||
@@ -91,7 +92,7 @@ function buildRequest(body) {
     allowed.include = ['reasoning.encrypted_content'];
   }
   return {...allowed,model:MODEL,reasoning:{effort:EFFORT},store:false,
-    max_output_tokens:LIMITS.outputTokens,parallel_tool_calls:body.parallel_tool_calls===true,stream:body.stream===true};
+    max_output_tokens:outputTokens,parallel_tool_calls:body.parallel_tool_calls===true,stream:body.stream===true};
 }
 
 function readBody(req, limit) {
@@ -137,7 +138,9 @@ function responseSnapshots(body, contentType) {
   return found;
 }
 
-function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
+function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch,requestLimit=LIMITS.requests,outputTokens=LIMITS.outputTokens}) {
+  if (!Number.isSafeInteger(requestLimit) || requestLimit < 1 || requestLimit > LIMITS.requests || !Number.isSafeInteger(outputTokens) || outputTokens < 1 || outputTokens > LIMITS.outputTokens) throw Error('invalid proxy budget');
+  const limits = {...LIMITS,requests:requestLimit,outputTokens};
   if (typeof apiKey!=='string' || !apiKey.trim() || typeof gateToken!=='string' ||
       !/^[a-zA-Z0-9_-]{24,128}$/.test(gateToken)) throw Error('proxy credentials unavailable');
   const stats={requests:0,inputBytes:0,providerOk:0,providerFailed:0,authFailures:0,rateLimits:0,
@@ -157,14 +160,14 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
     if(req.method==='GET'&&req.url==='/stats')return send(200,{...stats,observedModels:[...models],
       usage:Object.fromEntries(Object.entries(usage).map(([key,value])=>[key,
         {...value,tokens:value.reported ? value.tokens : null}])),
-      requestedModel:MODEL,requestedEffort:EFFORT,wireHashVersion:1,wireHashes:[...wireHashes],limits:LIMITS});
+      requestedModel:MODEL,requestedEffort:EFFORT,wireHashVersion:1,wireHashes:[...wireHashes],limits});
     if(req.method!=='POST'||req.url!=='/v1/responses')return send(404,{error:'unsupported'});
     if(!String(req.headers['content-type']||'').startsWith('application/json'))return send(415,{error:'unsupported body'});
     if(Number(req.headers['content-length'])>LIMITS.requestBytes)return send(413,{error:'input limit'});
     let incoming,outbound;
     try{incoming=await readBody(req,LIMITS.requestBytes);}
     catch{return send(413,{error:'input limit'});}
-    try{outbound=buildRequest(JSON.parse(incoming.text));}
+    try{outbound=buildRequest(JSON.parse(incoming.text),outputTokens);}
     catch(error){
       stats.gateRejections++;
       if(error.code==='tool-choice-rejected'){
@@ -175,7 +178,7 @@ function createBudgetProxy({apiKey,gateToken,fetchImpl=fetch}) {
     }
     const data=JSON.stringify(outbound), bytes=Buffer.byteLength(data);
     if(bytes>LIMITS.requestBytes)return send(413,{error:'input limit'});
-    if(stats.requests>=LIMITS.requests||stats.inputBytes+bytes>LIMITS.totalBytes){
+    if(stats.requests>=requestLimit||stats.inputBytes+bytes>LIMITS.totalBytes){
       stats.budgetRefusals++;return send(429,{error:'budget-exhausted'});
     }
     const now=Date.now();

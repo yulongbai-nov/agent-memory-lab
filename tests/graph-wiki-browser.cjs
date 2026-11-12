@@ -146,6 +146,19 @@ async function main() {
     assert.match(await taskItem.innerText(), /任务.*未完成/);
     assert.doesNotMatch(await taskItem.innerText(), /已确定|已替代/);
 
+    // The historical decision must open the archived old revision, not its newer version.
+    await oldDecision.click();
+    await page.waitForFunction(() =>
+      document.querySelector("#evidence").textContent.includes("route-tuesday"),
+    );
+    const oldEvidence = JSON.parse(await page.locator("#evidence").innerText());
+    assert.equal(oldEvidence.id, scenario.references.original.id);
+    assert.deepEqual(oldEvidence.source, scenario.references.original.source);
+    assert.equal(oldEvidence.turnId, "dsh-turn-1");
+    assert.equal(oldEvidence.revision, scenario.references.original.revision);
+    assert.notEqual(oldEvidence.revision, scenario.references.newer.revision);
+    assert.equal(oldEvidence.original.availability, "archived");
+
     // The visible timeline item must invoke the real evidence endpoint with its exact source.
     const item = page
       .locator("#visual-timeline .vis-item")

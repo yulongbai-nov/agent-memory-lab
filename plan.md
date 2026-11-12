@@ -33,3 +33,5 @@
 Graph + Wiki 当前迭代已用一个跨 Harness 合成案例验证项目和主题入口、决定变更、待办及精确来源。测试禁用 service worker，不证明新的离线能力；未调用模型。[查询契约提案](spec/graph-wiki-contract-v0.1.md) · [验收场景](benchmark/graph-wiki/README.md)
 
 来源分页使用 SQLite 话题索引，每页返回 20 条精确版本引用。审核历史单独保留决定和任务状态。合成浏览器用例遍历多页，核对跨 Harness 引用及原档完整性。 [分页契约](spec/graph-wiki-contract-v0.1.md#分页来源与审核历史)
+
+项目页支持直接核对待办和决定的精确证据。SQLite 待办查询仅将任务版本与关联目标返回给应用，兼容旧版待办的识别仍扫描作用域内的版本元数据。合成 Chrome 验收覆盖批注失败时证据保持可见。

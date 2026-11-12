@@ -61,12 +61,21 @@ async function main() {
     });
     const context = await browser.newContext({ serviceWorkers: "block" });
     const external = [];
+    const writes = [];
+    let failAnnotations = false;
     await context.route("**/*", async (route) => {
       const url = new URL(route.request().url());
+      if (!["GET", "HEAD"].includes(route.request().method()))
+        writes.push(`${route.request().method()} ${url.pathname}`);
       if (url.origin !== base) {
         external.push(url.origin);
         return route.abort();
       }
+      if (failAnnotations && url.pathname === "/api/annotations")
+        return route.fulfill({
+          status: 503,
+          body: "Synthetic annotation failure",
+        });
       return route.continue();
     });
     const page = await context.newPage();
@@ -126,7 +135,52 @@ async function main() {
     );
     const task = await page.locator("#project-tasks").innerText();
     assert.match(task, /Print the route checklist\./);
-    assert.match(task, /open/);
+    assert.match(task, /状态：未完成/);
+    assert.match(task, /下一步.*Print the route checklist\./);
+    const decisions = await page.locator("#project-decisions").innerText();
+    assert.match(decisions, /The dry run is Wednesday\./);
+    assert.doesNotMatch(decisions, /Print the route checklist\./);
+
+    // The overview must open the task's exact source even if notes fail to load.
+    failAnnotations = true;
+    const taskEvidenceResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/evidence" &&
+        response.request().method() === "GET",
+    );
+    const annotationFailure = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/annotations" &&
+        response.status() === 503,
+    );
+    await page
+      .locator("#project-tasks")
+      .getByRole("button", { name: /查看.*证据/ })
+      .click();
+    const response = await taskEvidenceResponse;
+    const requestedCitation = JSON.parse(
+      new URL(response.url()).searchParams.get("citation"),
+    );
+    assert.deepEqual(requestedCitation, {
+      id: scenario.references.task.id,
+      revision: scenario.references.task.revision,
+      source: scenario.references.task.source,
+    });
+    await annotationFailure;
+    await page.getByText("批注加载失败，请重试查看证据").waitFor();
+    await page.waitForFunction(() =>
+      document
+        .querySelector("#evidence")
+        .textContent.includes("route-checklist"),
+    );
+    const taskEvidence = JSON.parse(
+      await page.locator("#evidence").innerText(),
+    );
+    assert.equal(taskEvidence.id, scenario.references.task.id);
+    assert.equal(taskEvidence.revision, scenario.references.task.revision);
+    assert.deepEqual(taskEvidence.source, scenario.references.task.source);
+    assert.equal(taskEvidence.turnId, "dsh-turn-3");
+    failAnnotations = false;
     const projectCurrent = await selectFrom(project);
     const topicCurrent = await selectFrom(topic);
     assert.equal(topicCurrent, projectCurrent);
@@ -191,10 +245,11 @@ async function main() {
     assert.equal(sha(await fs.readFile(archivedPath)), originalHash);
     assert.equal(sha(await fs.readFile(archivePath)), archiveHash);
     assert.deepEqual(external, []);
+    assert.deepEqual(writes, []);
     assert.deepEqual(errors, []);
     await context.close();
     console.log(
-      "PASS: both entries, reviewed decision and open task, real graph/timeline, exact evidence, unchanged source, no external requests",
+      "PASS: overview task next step and exact evidence despite annotation failure, both entries, real graph/timeline, unchanged source, no writes or external requests",
     );
   } finally {
     if (browser) await browser.close();

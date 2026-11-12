@@ -153,7 +153,7 @@ async function main() {
     );
     const task = await page.locator("#project-tasks").innerText();
     assert.match(task, /Print the route checklist\./);
-    assert.match(task, /open/);
+    assert.match(task, /状态：未完成/);
     const projectCurrent = await selectFrom(project);
     const topicCurrent = await selectFrom(topic);
     assert.equal(topicCurrent, projectCurrent);

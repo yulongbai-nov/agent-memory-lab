@@ -73,6 +73,7 @@ const lintedJavaScript = [
   "lib/local-draft-index.cjs",
   "lib/task-state.cjs",
   "tests/graph-wiki-view.test.cjs",
+  "benchmark/graph-wiki/run-temporal-baseline.cjs",
   "tests/graph-wiki-browser.cjs",
   "tests/graph-wiki-pagination.cjs",
   "tests/training-manifest.test.cjs",

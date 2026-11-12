@@ -27,7 +27,9 @@ jobs:
       - name: Verify Graph and Wiki browser path
         env:
           CHROME_EXECUTABLE: /usr/bin/google-chrome
-        run: npm run test:graph-wiki-browser
+        run: |
+          node benchmark/graph-wiki/run-temporal-baseline.cjs
+          npm run test:graph-wiki-browser
       - name: Ensure ripgrep is available for the file baseline
         run: |
           if ! command -v rg >/dev/null; then

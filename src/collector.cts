@@ -25,6 +25,7 @@ const hash = (value: string) =>
   crypto.createHash("sha256").update(value).digest("hex");
 const signature = (st: import("node:fs").Stats) =>
   hash(JSON.stringify([st.size, st.mtimeMs, st.ctimeMs, st.ino]));
+const MAX_TRACKED_IDENTITIES = 20_000;
 interface Operation {
   scope: { owner: string; project: string };
   archive: {
@@ -78,6 +79,7 @@ interface EntryState {
 interface State {
   version: number;
   entries: Record<string, EntryState>;
+  pendingQueue?: string[];
 }
 type SingleInput = Input & { archiveRoot?: undefined };
 type CombinedInput = Input & { archiveRoot: string; source: "codex" };
@@ -94,6 +96,7 @@ interface CollectorResult {
   inaccessible: number;
   traversalLimited: boolean;
   unverifiable?: number;
+  queueOverflow?: number;
 }
 type Ingest = (
   op: Operation,
@@ -114,7 +117,14 @@ function isCollectorState(value: unknown): value is State {
     !isRecord(value) ||
     value.version !== 1 ||
     !isRecord(value.entries) ||
-    Object.keys(value.entries).length > 20000
+    Object.keys(value.entries).length > MAX_TRACKED_IDENTITIES ||
+    (value.pendingQueue !== undefined &&
+      (!Array.isArray(value.pendingQueue) ||
+        value.pendingQueue.length > MAX_TRACKED_IDENTITIES ||
+        value.pendingQueue.some(
+          (id: unknown) => typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id),
+        ) ||
+        new Set(value.pendingQueue).size !== value.pendingQueue.length))
   )
     return false;
   return Object.values(value.entries).every(
@@ -283,7 +293,7 @@ async function collectChanged(
         await fs.rm(tmp, { force: true });
       }
     }
-    const result = {
+    const result: CollectorResult = {
       ...empty,
       discovered: snapshot.discovered,
       inaccessible,
@@ -292,6 +302,8 @@ async function collectChanged(
       unverifiable: snapshot.unverifiable,
     };
     if (!state) {
+      if (new Set(current.map((e) => e.id)).size > MAX_TRACKED_IDENTITIES)
+        throw new Error("Collector baseline exceeds identity capacity");
       state = {
         version: 1,
         entries: Object.fromEntries(current.map((e) => [e.id, { sig: e.sig }])),
@@ -301,40 +313,68 @@ async function collectChanged(
       return result;
     }
     const establishedState = state;
-    // Prune only after a complete scan; files that disappear from an incomplete scan retain their prior state.
-    if (
+    const before = JSON.stringify(establishedState);
+    const complete =
       !snapshot.traversalLimited &&
       !inaccessible &&
       !snapshot.unverifiable &&
-      !snapshot.blocked
-    ) {
-      const ids = new Set(current.map((e) => e.id));
+      !snapshot.blocked;
+    const visible = new Map(current.map((entry) => [entry.id, entry]));
+    if (complete) {
       for (const id of Object.keys(establishedState.entries))
-        if (!ids.has(id)) delete establishedState.entries[id];
+        if (!visible.has(id)) delete establishedState.entries[id];
     }
-    const pending = current.filter((e) => {
-      const old = establishedState.entries[e.id];
+    const eligible = (entry: CurrentEntry) => {
+      const old = establishedState.entries[entry.id];
       return (
-        !old || ((old.sig !== e.sig || old.partial) && old.blocked !== e.sig)
+        !old ||
+        ((old.sig !== entry.sig || old.partial) && old.blocked !== entry.sig)
       );
-    });
+    };
+    const pending = current.filter(eligible);
     pending.sort(
       (a, b) =>
         (establishedState.entries[a.id]?.attemptedAt || 0) -
           (establishedState.entries[b.id]?.attemptedAt || 0) ||
         b.mtime - a.mtime,
     );
+    // Older binaries can add entries without maintaining the queue. Keep entry
+    // identities first when reconciling a union that exceeds the capacity.
+    const admitted = new Set(Object.keys(establishedState.entries));
+    const queue: string[] = [];
+    for (const id of establishedState.pendingQueue || []) {
+      const entry = visible.get(id);
+      if ((!entry && complete) || (entry && !eligible(entry))) continue;
+      if (!admitted.has(id) && admitted.size >= MAX_TRACKED_IDENTITIES)
+        continue;
+      admitted.add(id);
+      queue.push(id);
+    }
+    const queued = new Set(queue);
+    let queueOverflow = 0;
+    for (const entry of pending) {
+      if (queued.has(entry.id)) continue;
+      if (!admitted.has(entry.id) && admitted.size >= MAX_TRACKED_IDENTITIES) {
+        queueOverflow++;
+        continue;
+      }
+      admitted.add(entry.id);
+      queued.add(entry.id);
+      queue.push(entry.id);
+    }
+    if (queueOverflow) result.queueOverflow = queueOverflow;
+    establishedState.pendingQueue = queue;
+    if (JSON.stringify(establishedState) !== before) await save();
     result.pending = pending.length;
-    for (const entry of pending.slice(0, limit)) {
+    const selected = queue
+      .flatMap((id) => {
+        const entry = visible.get(id);
+        return entry && eligible(entry) ? [entry] : [];
+      })
+      .slice(0, limit);
+    for (const entry of selected) {
       if (await atCapacity()) {
         result.skippedForCapacity = true;
-        break;
-      }
-      if (
-        !establishedState.entries[entry.id] &&
-        Object.keys(establishedState.entries).length >= 20000
-      ) {
-        result.sessionsFailed++;
         break;
       }
       result.sessionsAttempted++;
@@ -370,7 +410,6 @@ async function collectChanged(
             attemptedAt,
           };
         else establishedState.entries[entry.id] = { sig, attemptedAt };
-        await save();
       } catch (error) {
         result.sessionsFailed++;
         const old = establishedState.entries[entry.id] || {};
@@ -382,6 +421,11 @@ async function collectChanged(
             : {}),
         };
       }
+      const index = queue.indexOf(entry.id);
+      if (index !== -1) queue.splice(index, 1);
+      if (eligible(entry)) queue.push(entry.id);
+      // Persist outside the ingest catch so a write failure aborts the run.
+      await save();
     }
     result.pending = current.filter((e) => {
       const old = establishedState.entries[e.id];
@@ -391,7 +435,6 @@ async function collectChanged(
       snapshot.blocked +
       current.filter((e) => establishedState.entries[e.id]?.blocked === e.sig)
         .length;
-    await save();
     return result;
   });
 }

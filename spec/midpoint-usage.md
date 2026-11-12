@@ -82,7 +82,9 @@ macOS 可用 `node bin/daily-launchd.cjs --dir <private-dir> --manifest <private
 
 ## 本机持续摄取
 
-`bin/daily-launchd.cjs --interval-seconds 120` 可为只含 `"incremental":true` 目录条目的私有清单生成变更采集任务。生成的 `local.agent-memory-lab.collector` 每 120 秒唤起一次有界运行。每轮每端最多 2 份变化会话、每份最多 80 条，超大投影批次会标记阻断。以文件元数据跳过未变化来源，较早失败的来源轮转重试；长期回填活跃时本轮让行。每会话前按当前索引大小检查容量。任务只做本地追加与基础索引，模型调用为 0。退出码 0 表示进程正常退出，积压和阻塞仍需查看采集统计。03:00 的任务负责每日派生整理与有界回补。
+`bin/daily-launchd.cjs --interval-seconds 120` 可为只含 `"incremental":true` 目录条目的私有清单生成变更采集任务。生成的 `local.agent-memory-lab.collector` 每 120 秒唤起一次有界运行。每轮每端最多 2 份变化会话、每份最多 80 条，超大投影批次会标记阻断。以文件元数据跳过未变化来源，长期回填活跃时本轮让行。每会话前按当前索引大小检查容量。任务只做本地追加与基础索引，模型调用为 0。退出码 0 表示进程正常退出，积压和阻塞仍需查看采集统计。03:00 的任务负责每日派生整理与有界回补。
+
+持续摄取在每个来源的私有状态文件中保留等待顺序。新发现的可处理会话排在已等待会话之后，需续接或重试的会话在本次尝试后回到队尾。发现不完整时保留暂未看到的会话，并继续处理当前可见会话。首次扫描仍只建立基线；旧状态在下一次轮询时补建等待顺序。会话状态与排队身份合计最多 20,000 个，`watch` 用 `queueOverflow` 报告本轮仍待纳入的可见会话数。等待顺序和采集断点分别保存，退出后按已提交断点续接。
 
 用 `launchctl bootout gui/$(id -u)/local.agent-memory-lab.collector` 停用持续摄取。恢复时用 `launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/local.agent-memory-lab.collector.plist"`。两条命令只操作持续摄取。合成试点验证了定时新增、停用和重新启用。
 

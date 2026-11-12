@@ -51,6 +51,11 @@ function positiveInt(value, max) {
   return n;
 }
 
+function nonnegativeInt(value,max) {
+  if(value===undefined)return undefined;
+  const n=Number(value);if(!Number.isSafeInteger(n)||n<0||n>max)throw new Error('Invalid numeric option.');return n;
+}
+
 async function ingest(op, options) {
   const { readCodex, readDsh, sourceIdentity } = require('../lib/adapters');
   const read = options.source === 'chatgpt' ? require('../lib/adapters/chatgpt-snapshot.cjs').readChatgptSnapshot : { codex: readCodex, dsh: readDsh }[options.source];
@@ -117,7 +122,7 @@ async function main() {
   const readCommands = ['find', 'timeline', 'current', 'evidence', 'coverage', 'verify-original', 'semantic-status', 'task-list'];
   const readOnly = readCommands.includes(command) || (command === 'mcp' && !values['allow-annotations']);
   const op = await operations({ ...values, readOnly });
-  const selection = { ...values, limit: positiveInt(values.limit, 100), offset: positiveInt(values.offset, 10000), harness: values.source };
+  const selection = { ...values, limit: positiveInt(values.limit, command==='task-list'?10000:100), offset: command==='task-list'?nonnegativeInt(values.offset,10000):positiveInt(values.offset,10000), harness: values.source };
   if (values.source && values.instance && values.session) selection.source = { harness: values.source, instance: values.instance, session: values.session };
   else delete selection.source;
   let result;

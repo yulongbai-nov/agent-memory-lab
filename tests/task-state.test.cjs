@@ -149,6 +149,7 @@ test("default MCP timeline returns only bounded task-state summary", () => {
         id: "h",
         evidenceKind: "operator",
         recordedAt: "2026-01-01T00:00:00.000Z",
+        occurredAt: null,
         evidence: null,
       },
     ],
@@ -205,6 +206,7 @@ test("MCP task evidence is whole, bounded across rows and reports omissions", ()
       id,
       evidenceKind: "source",
       recordedAt: stamp,
+      occurredAt: "2025-12-31T00:00:00.000Z",
       evidence: { id: "item", revision: "a".repeat(64), source },
       text: "must not leak",
     });
@@ -231,6 +233,8 @@ test("MCP task evidence is whole, bounded across rows and reports omissions", ()
     for (const h of row.task_state.heads) {
       assert.deepEqual(h.evidence.source, source);
       assert.equal(h.evidence.id, "item");
+      assert.equal(h.recordedAt, stamp);
+      assert.equal(h.occurredAt, "2025-12-31T00:00:00.000Z");
       total += Buffer.byteLength(JSON.stringify(h)) + 1;
     }
   }

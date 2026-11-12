@@ -499,3 +499,85 @@ test("persistent CLI replicas converge and replay competing observations over a 
     assert.equal(replay.pulled, 0);
   }
 });
+
+test("actual task-list CLI pages results and bounds summaries without changing identifiers", async (t) => {
+  const dir = await fixture(t),
+    c = client(dir),
+    append = await nativeFixture(dir, c),
+    target = await append("page", "Synthetic pagination source");
+  const db = await openArchive({ dir });
+  try {
+    for (let i = 0; i < 25; i++)
+      await db.addAnnotation({
+        scope: c.scope,
+        id: "task-" + String(i).padStart(2, "0"),
+        kind: "todo",
+        text: "长".repeat(300),
+        target,
+      });
+    const observation = {
+      scope: c.scope,
+      kind: "task-state",
+      target,
+      taskRoot: review("task-00"),
+      state: "paused",
+      evidenceKind: "operator",
+      text: "长".repeat(300),
+    };
+    await db.addAnnotation({ ...observation, id: "base-page", parents: [] });
+    for (let i = 0; i < 4; i++)
+      await db.addAnnotation({
+        ...observation,
+        id: "head-" + i,
+        parents: ["base-page"],
+      });
+    await db.addAnnotation({
+      scope: c.scope,
+      id: "z".repeat(2200),
+      kind: "todo",
+      text: "Long identifier task",
+      target,
+    });
+  } finally {
+    db.close?.();
+  }
+  const first = c.run(["task-list"]);
+  assert.equal(first.tasks.length, 20);
+  assert.deepEqual(first.coverage, {
+    total: 26,
+    offset: 0,
+    limit: 20,
+    has_more: true,
+  });
+  assert.ok(
+    first.tasks.every(
+      (x) => Buffer.byteLength(x.text) <= 512 && x.textTruncated === true,
+    ),
+  );
+  assert.ok(first.tasks.every((x) => x.root.id.startsWith("task-")));
+  const paused = first.tasks.find((x) => x.root.id === "task-00");
+  assert.equal(paused.state, "paused");
+  assert.equal(paused.next_step, null);
+  assert.equal(paused.headCount, 4);
+  assert.equal(paused.heads.length, 3);
+  assert.equal(paused.headsTruncated, true);
+  assert.ok(
+    paused.heads.every(
+      (x) => Buffer.byteLength(x.text) <= 256 && x.textTruncated === true,
+    ),
+  );
+
+  const last = c.run(["task-list", "--offset", "20", "--limit", "100"]);
+  assert.equal(last.tasks.length, 6);
+  assert.equal(last.coverage.limit, 50);
+  assert.equal(last.coverage.has_more, false);
+  const oversized = last.tasks.find((x) => x.referencesOmitted);
+  assert.ok(oversized);
+  assert.equal("root" in oversized, false);
+  assert.equal("target" in oversized, false);
+  assert.equal(oversized.details, "本机 timeline");
+  assert.deepEqual(
+    c.run(["task-list", "--offset", "0", "--limit", "1"]).coverage,
+    { total: 26, offset: 0, limit: 1, has_more: true },
+  );
+});

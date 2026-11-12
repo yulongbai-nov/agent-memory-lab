@@ -31,6 +31,7 @@
     "src/query-time.cts",
     "src/graph-wiki-view.cts",
     "src/graph-wiki-browser.cts",
-    "src/repair-original.cts"
+    "src/repair-original.cts",
+    "src/reviewed-page.cts"
   ]
 }

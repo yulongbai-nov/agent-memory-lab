@@ -58,6 +58,19 @@ async function main() {
     });
     for (const annotation of scenario.fixture.annotations)
       await archive.addAnnotation(annotation);
+    // Place enough reviews between the historical decision and its successor to
+    // force the two evidence references onto different reviewed-history pages.
+    for (let index = 0; index < 25; index++) {
+      await archive.addAnnotation({
+        id: `page-review-${String(index).padStart(2, "0")}`,
+        kind: "todo",
+        scope: scenario.scope,
+        target: scenario.fixture.annotations[0].target,
+        topic: scenario.topic,
+        text: `Synthetic review ${String(index).padStart(2, "0")}`,
+        valid_time: new Date(Date.UTC(2026, 3, 7, 9, index + 1)).toISOString(),
+      });
+    }
     archive.close?.();
     await migrateJsonToSqlite({ dir });
     archive = await openArchive({ dir, readOnly: true });
@@ -94,7 +107,18 @@ async function main() {
     const page = await context.newPage();
     const errors = [];
     const sourceResponses = [];
+    const reviewResponses = [];
+    const mutations = [];
+    page.on("request", (request) => {
+      if (!["GET", "HEAD"].includes(request.method()))
+        mutations.push(request.url());
+    });
     page.on("response", (response) => {
+      if (
+        response.ok() &&
+        new URL(response.url()).pathname === "/api/reviewed-timeline-page"
+      )
+        reviewResponses.push(response.json());
       if (new URL(response.url()).pathname === "/api/topic-sources")
         sourceResponses.push(response.json());
     });
@@ -130,15 +154,6 @@ async function main() {
       assert.match(current, /已确定/);
       assert.match(current, /The dry run is Wednesday\./);
       assert.match(current, /route-change/);
-      await page.waitForFunction(() =>
-        document
-          .querySelector("#timeline")
-          .textContent.includes("Print the route checklist."),
-      );
-      assert.match(
-        await page.locator("#timeline").innerText(),
-        /Print the route checklist\./,
-      );
       await page.waitForSelector("#graph canvas");
       await page.waitForSelector("#visual-timeline .vis-item");
       assert.ok(await page.locator("#graph canvas").count());
@@ -157,6 +172,126 @@ async function main() {
     const projectCurrent = await selectFrom(project);
     const topicCurrent = await selectFrom(topic);
     assert.equal(topicCurrent, projectCurrent);
+
+    // Reviewed history is bounded independently of the graph and source list.
+    // Collect every continuation, checking the displayed order and exact coverage.
+    const reviewMore = page.getByTestId("reviewed-timeline-load-more");
+    await reviewMore.waitFor({ state: "visible" });
+    await page
+      .locator("#timeline > div")
+      .filter({ hasText: "The public walk is Tuesday." })
+      .getByRole("button", { name: "查看证据" })
+      .click();
+    await page.waitForFunction(() =>
+      document.querySelector("#evidence").textContent.includes("route-tuesday"),
+    );
+    const pinned = await page.locator("#evidence").innerText();
+    await page.route(
+      "**/api/reviewed-timeline-page?**",
+      (route) =>
+        route.fulfill({
+          status: 409,
+          body: "reviewed timeline cursor is stale",
+        }),
+      { times: 1 },
+    );
+    await reviewMore.click();
+    const refresh = page.getByRole("button", { name: "重新加载审核历史" });
+    await refresh.waitFor({ state: "visible" });
+    const currentRefresh = page.waitForResponse(
+      (response) =>
+        response.ok() && new URL(response.url()).pathname === "/api/current",
+    );
+    await refresh.click();
+    await currentRefresh;
+    await reviewMore.waitFor({ state: "visible" });
+    assert.equal(await page.locator("#evidence").innerText(), pinned);
+    const initialCount = await page.locator("#timeline > div").count();
+    assert.ok(initialCount <= 20, "first reviewed page must be bounded");
+    const reviewCursors = new Set();
+    let reviewPageCount = 1;
+    while (await reviewMore.isVisible()) {
+      assert.ok(reviewPageCount < 10, "review pagination must terminate");
+      const before = await page.locator("#timeline > div").count();
+      const requestPromise = page.waitForRequest(
+        (request) =>
+          new URL(request.url()).pathname === "/api/reviewed-timeline-page",
+      );
+      await reviewMore.click();
+      const requested = new URL((await requestPromise).url());
+      const cursor = requested.searchParams.get("cursor");
+      assert.ok(cursor);
+      assert.equal(requested.searchParams.get("topic"), scenario.topic);
+      assert.equal(reviewCursors.has(cursor), false);
+      reviewCursors.add(cursor);
+      await page.waitForFunction(
+        (count) => document.querySelector("#timeline").children.length > count,
+        before,
+      );
+      reviewPageCount++;
+    }
+    assert.ok(reviewPageCount > 1);
+    const reviewPages = (await Promise.all(reviewResponses)).slice(
+      -reviewPageCount,
+    );
+    const reviewRows = reviewPages.flatMap((result) => result.rows);
+    assert.equal(
+      await page.locator("#timeline > div").count(),
+      reviewRows.length,
+    );
+    const reviewIds = reviewRows.map((row) => row.review_id);
+    assert.equal(new Set(reviewIds).size, reviewIds.length);
+    for (let index = 0; index < 25; index++) {
+      assert.equal(
+        reviewIds.filter(
+          (id) => id === `page-review-${String(index).padStart(2, "0")}`,
+        ).length,
+        1,
+      );
+    }
+    assert.ok(reviewIds.indexOf("route-decision") < initialCount);
+    assert.ok(reviewIds.indexOf("route-change") >= initialCount);
+    assert.deepEqual(
+      reviewRows.map((row) => row.time),
+      [...reviewRows.map((row) => row.time)].sort(),
+    );
+    const renderedReviews = await page
+      .locator("#timeline > div")
+      .allTextContents();
+    for (let index = 0; index < reviewRows.length; index++)
+      assert.ok(renderedReviews[index].includes(reviewRows[index].text));
+    assert.doesNotMatch(
+      renderedReviews.join(" "),
+      /foreign blue lantern route/i,
+    );
+    assert.match(
+      await page.locator("#current").innerText(),
+      /The dry run is Wednesday/,
+    );
+    assert.ok(await page.locator("#graph canvas").count());
+    assert.ok(await page.locator("#visual-timeline .vis-item").count());
+    const newReview = page
+      .locator("#timeline > div")
+      .filter({ hasText: "The dry run is Wednesday." });
+    await newReview.getByRole("button", { name: "查看证据" }).click();
+    await page.waitForFunction(() =>
+      document
+        .querySelector("#evidence")
+        .textContent.includes("route-wednesday"),
+    );
+    const newReviewEvidence = JSON.parse(
+      await page.locator("#evidence").innerText(),
+    );
+    assert.equal(
+      newReviewEvidence.revision,
+      scenario.references.wednesday?.revision ||
+        "979326e6c5bf4e4310ff5042bb3b6892dc3ac68bcfa3f8fa612a7d518953a37e",
+    );
+    assert.deepEqual(newReviewEvidence.source, {
+      harness: "codex",
+      instance: "fixture",
+      session: "routing",
+    });
 
     // Loading additional source pages must preserve the selected topic and the
     // complete reviewed state, even when source rows cross page boundaries.
@@ -298,6 +433,7 @@ async function main() {
     assert.equal(sha(await fs.readFile(archivedPath)), originalHash);
     assert.equal(sha(await fs.readFile(archivePath)), archiveHash);
     assert.equal(sha(await fs.readFile(sqlitePath)), sqliteHash);
+    assert.deepEqual(mutations, []);
     assert.deepEqual(external, []);
     assert.deepEqual(errors, []);
     await context.close();

@@ -51,3 +51,5 @@ SQLite 的话题审核查询通过话题索引和精确版本联结选择候选�
 公开合成留出数据支持生成只含模型输入的请求批次，并在本机回放评分。答案精确匹配、引用范围和缺失响应分别计数。合成回放验收流程，实际模型评测另行执行。 [离线评测回放](spec/training-manifest-v1.md#离线评测回放)
 
 同一 Moonbridge 合成案例已验证现有归档和固定版本 Graphiti 的生效边界。Graphiti 能过滤明确写入的时间区间并取回 episode；精确版本和业务知晓时间由项目绑定。自动抽取、纠正、完整历史重建及后端选型仍待验证。 [时序对照](benchmark/graph-wiki/README.md#时序对照)
+
+FalkorDBLite 已有索引对照。独立校验覆盖完整的两条合成关系，并在超过读取上限时拒绝结果。网页审核历史到末页时会显示所选范围，来源列表也会提示跨话题证据的位置。审核链的存储层有界读取仍待实现。 [FalkorDBLite 回放](benchmark/graph-wiki/README.md#falkordblite-索引对照)

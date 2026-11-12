@@ -21,7 +21,7 @@
 
 ## 时序对照
 
-两个脚本读取同一个 `scenario.json`。归档侧通过实际查询返回决定，再沿查询结果回查作用域、会话、轮次、版本和原件可用性。Graphiti 侧通过库写入显式评审过的关系，在临时 Kuzu 数据库执行 Graphiti 生成的时间筛选，并按 UUID 取回 episode。预期答案用于验收断言。
+归档、Kuzu 和 FalkorDBLite 对照读取同一个 `scenario.json`。归档侧通过实际查询返回决定，再沿查询结果回查作用域、会话、轮次、版本和原件可用性。Graphiti 侧通过库写入显式评审过的关系，在临时数据库执行 Graphiti 生成的时间筛选，并按 UUID 取回 episode。预期答案用于验收断言。
 
 ```sh
 npm ci --ignore-scripts
@@ -31,7 +31,7 @@ node benchmark/graph-wiki/run-temporal-baseline.cjs
 graphiti_venv=$(mktemp -d)
 uv venv --python 3.12.15 "$graphiti_venv"
 uv pip install --python "$graphiti_venv/bin/python" -r benchmark/graph-wiki/graphiti-temporal-requirements.txt
-"$graphiti_venv/bin/python" benchmark/graph-wiki/run-graphiti-temporal.py
+"$graphiti_venv/bin/python" -B benchmark/graph-wiki/run-graphiti-temporal.py
 ```
 
 Node 回放随项目 CI 运行。Graphiti 回放是可选实验，在 macOS arm64、Python 3.12.15、Graphiti 0.31.2 固定提交和 Kuzu 0.11.3 上验收。安装依赖需要网络。运行时禁用 Graphiti 遥测，使用进程内数据库，不调用模型。该 Graphiti 版本已标记 Kuzu 后端弃用。 [固定版本配置](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/pyproject.toml) · [Kuzu 驱动](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/graphiti_core/driver/kuzu_driver.py)
@@ -43,3 +43,18 @@ Node 回放随项目 CI 运行。Graphiti 回放是可选实验，在 macOS arm6
 | 来源与纠正 | DSH 可回查原件，Codex 可回查精确版本，纠正的历史时间为未知。 | episode 能返回应用显式保存的来源引用。回放未验证原件字节，也未应用纠正或抽取事实。 |
 
 适用区间使用 `valid_at <= asOf`，结束时间为空或严格晚于 `asOf`。Graphiti 在其模型契约中区分未来计划的表达时间和未来发生时间。表中提前切换使用显式替代输入模拟该映射，未运行模型抽取。此对照不评定性能或框架胜负。 [时间筛选源码](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/graphiti_core/search/search_filters.py) · [边模型](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/graphiti_core/edges.py)
+
+### FalkorDBLite 索引对照
+
+```sh
+falkor_venv=$(mktemp -d)
+uv venv --python 3.12.15 "$falkor_venv"
+uv pip install --python "$falkor_venv/bin/python" -r benchmark/graph-wiki/graphiti-falkor-requirements.txt
+"$falkor_venv/bin/python" -B benchmark/graph-wiki/run-falkor-temporal.py
+```
+
+macOS arm64 上的固定版本 Graphiti／FalkorDBLite 0.11.0 实测，11:59 的默认筛选同时返回旧决定和新决定，12:00 只返回新决定。在同一临时图上，仅移除 `valid_at` 索引后，11:59 只返回旧决定；重建该索引后重新返回两条。关系、参数和其他索引保持不变。脚本保留各阶段的实际返回。 [Graphiti 索引定义](https://github.com/getzep/graphiti/blob/ebef986a0b2360211b65751c111cacb4a7d790eb/graphiti_core/graph_queries.py) · [FalkorDB 索引文档](https://docs.falkordb.com/cypher/indexing)
+
+对照另行读取整个合成分区的两条关系，验证作用域、关系身份与 UTC 区间，再独立判断生效。两时点均命中预期决定，并取回对应的精确 episode 引用。脚本额外用一条上限检验溢出会拒绝结果。该验证仅适用于完整读到的合成分区，尚未验证大图、性能、生产查询或引擎内部原因。
+
+实验使用临时本机 Unix socket，禁用遥测和模型调用。为清理固定版本的嵌入进程，脚本调用了客户端的私有关闭方法，并核对进程退出。此实验不在默认 CI 中安装数据库。

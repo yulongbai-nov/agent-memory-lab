@@ -912,6 +912,52 @@ test("v2 verifies only corroborated input in a legacy Codex wrapper", async (t) 
     }),
     { status: "verified", text: input },
   );
+  const legacy = (value, transcript) =>
+    `<realtime_delegation><input>${value}</input>` +
+    `<transcript_delta>${transcript}</transcript_delta></realtime_delegation>`;
+  for (const [value, transcript, quote] of [
+    [
+      '{"type":"transcript_delta","text":"We decided to test."}',
+      'user: {"type":"transcript_delta","text":"We decided to test."}',
+      "We decided to test.",
+    ],
+    [
+      "Visit https://example.test/path now",
+      "user: Visit https://example.test/path now",
+      "Visit",
+    ],
+    ["Use ports 12", "user: Use ports 1,2", "Use ports 12"],
+    ["Use key ABC", "user: Use key abc", "Use key ABC"],
+    [
+      "Deploy production",
+      "user: Deploy production\nonly after tests pass.",
+      "Deploy production",
+    ],
+    ["Proceed", "user: Proceed\nassistant: Later", "Proceed"],
+    ["Proceed", "user: Proceed\nunknown: ambiguous", "Proceed"],
+  ]) {
+    const bad = await fixture(legacy(value, transcript));
+    assert.equal(previewDeclaredProjection(bad, span(bad, quote)), null);
+    assert.deepEqual(
+      await verifyDeclaredProjection(dir, bad, span(bad, quote)),
+      { status: "integrity-failed" },
+    );
+  }
+  const multilineInput = "Deploy production\nonly after tests pass.";
+  const multiline = await fixture(
+    legacy(
+      multilineInput,
+      "assistant: Earlier\r\nuser: Deploy production\r\nonly after tests pass.",
+    ),
+  );
+  assert.deepEqual(
+    await verifyDeclaredProjection(
+      dir,
+      multiline,
+      span(multiline, multilineInput),
+    ),
+    { status: "verified", text: multilineInput },
+  );
   assert.deepEqual(projectionChoices(valid.item.text), []);
   assert.deepEqual(
     await verifyDeclaredProjection(dir, valid, span(valid, context)),

@@ -7,6 +7,7 @@ const typescript = [
   "src/reviewed-page.cts",
   "src/training-manifest.cts",
   "src/training-split.cts",
+  "src/training-evaluation.cts",
   "src/synthetic-training-manifest.cts",
   "src/graph-wiki-browser.cts",
   "src/graph-wiki-view.cts",

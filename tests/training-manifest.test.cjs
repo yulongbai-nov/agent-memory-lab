@@ -465,3 +465,176 @@ test("split export rejects a tampered parent and wrong CLI flags", () => {
   );
   assert.notEqual(other.status, 0);
 });
+
+function evalCli(command, args = [], stdin = "") {
+  return spawnSync(
+    process.execPath,
+    [path.join(root, "bin/memory.cjs"), command, ...args],
+    {
+      cwd: root,
+      encoding: "utf8",
+      input: stdin,
+      timeout: 10000,
+      maxBuffer: 4 * 1024 * 1024,
+    },
+  );
+}
+
+test("evaluation requests expose only held-out inputs and have a stable digest", () => {
+  const split = JSON.parse(cli("--synthetic", "--split", "test").stdout);
+  const train = JSON.parse(cli("--synthetic", "--split", "train").stdout);
+  const first = evalCli("training-eval-requests", ["--synthetic"]);
+  const second = evalCli("training-eval-requests", ["--synthetic"]);
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(first.stdout, second.stdout);
+  const requests = JSON.parse(first.stdout);
+  assert.deepEqual(Object.keys(requests).sort(), [
+    "contentHash",
+    "requests",
+    "splitHash",
+    "version",
+  ]);
+  assert.equal(requests.version, "training-eval-requests-v1");
+  assert.equal(requests.splitHash, split.contentHash);
+  assert.deepEqual(
+    requests.requests,
+    split.samples.map(({ id, input }) => ({ id, input })),
+  );
+  const { contentHash, ...body } = requests;
+  assert.equal(contentHash, digest(body));
+  const {
+    buildEvaluationRequests,
+  } = require("../lib/generated/training-evaluation.cjs");
+  const tampered = structuredClone(split);
+  tampered.evidenceRegistry[0].purpose = "training";
+  delete tampered.contentHash;
+  assert.throws(
+    () =>
+      buildEvaluationRequests({
+        ...tampered,
+        contentHash: digest(tampered),
+      }),
+    /invalid evaluation evidence registry/,
+  );
+  const trainIds = new Set(train.samples.map(({ id }) => id));
+  assert.ok(requests.requests.length > 0);
+  for (const request of requests.requests) {
+    assert.deepEqual(Object.keys(request).sort(), ["id", "input"]);
+    assert.equal(trainIds.has(request.id), false);
+    assert.deepEqual(Object.keys(request.input).sort(), ["evidence", "query"]);
+    for (const evidence of request.input.evidence)
+      assert.deepEqual(Object.keys(evidence).sort(), ["excerpt", "ref"]);
+  }
+  for (const args of [
+    [],
+    ["--synthetic", "--synthetic"],
+    ["--synthetic", "--split", "train"],
+    ["--synthetic", "extra"],
+  ])
+    assert.notEqual(evalCli("training-eval-requests", args).status, 0);
+});
+
+test("evaluation scoring separates answer and exact scoped citation matches", () => {
+  const splitResult = cli("--synthetic", "--split", "test");
+  assert.equal(splitResult.status, 0, splitResult.stderr);
+  const split = JSON.parse(splitResult.stdout);
+  const requestsResult = evalCli("training-eval-requests", ["--synthetic"]);
+  assert.equal(requestsResult.status, 0, requestsResult.stderr);
+  const requests = JSON.parse(requestsResult.stdout);
+  assert.ok(split.samples.length >= 3);
+  const makeResponse = (sample) => ({
+    id: sample.id,
+    answer: sample.expected.answer,
+    evidence: [sample.input.evidence[0].ref],
+  });
+  const responses = split.samples.slice(0, 3).map(makeResponse);
+  responses[1].answer += "\nwrong";
+  responses[2].evidence[0] = {
+    ...responses[2].evidence[0],
+    revision: "wrong-revision",
+  };
+  const predictions = {
+    version: "training-eval-predictions-v1",
+    requestsHash: requests.contentHash,
+    responses,
+  };
+  const score = (value) =>
+    evalCli("training-eval-score", ["--synthetic"], JSON.stringify(value));
+  const result = score(predictions);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert.equal(report.version, "training-eval-report-v1");
+  assert.equal(report.splitHash, split.contentHash);
+  assert.equal(report.requestsHash, requests.contentHash);
+  assert.equal(report.total, split.samples.length);
+  assert.equal(report.responded, 3);
+  assert.equal(report.missing, split.samples.length - 3);
+  assert.equal(report.answerMatches, 2);
+  assert.equal(report.citationScopeMatches, 2);
+  assert.doesNotMatch(result.stdout, /wrong-revision|\\nwrong/);
+  for (const [index, expected] of [
+    [0, [true, true]],
+    [1, [false, true]],
+    [2, [true, false]],
+  ]) {
+    const row = report.results.find(({ id }) => id === responses[index].id);
+    assert.deepEqual(
+      [row.responded, row.answerMatch, row.citationScopeMatch],
+      [true, ...expected],
+    );
+  }
+  const wrongScope = structuredClone(predictions);
+  wrongScope.responses[0].evidence[0].project += "-wrong";
+  const scoped = score(wrongScope);
+  assert.equal(scoped.status, 0, scoped.stderr);
+  assert.equal(
+    JSON.parse(scoped.stdout).results.find(({ id }) => id === responses[0].id)
+      .citationScopeMatch,
+    false,
+  );
+  for (const change of [
+    (value) => {
+      value.requestsHash = `sha256:${"0".repeat(64)}`;
+    },
+    (value) => {
+      value.responses.push(structuredClone(value.responses[0]));
+    },
+    (value) => {
+      value.responses[0].id = "unknown-id";
+    },
+    (value) => {
+      value.responses[0].answer = 42;
+    },
+    (value) => {
+      value.responses[0].evidence.push(
+        structuredClone(value.responses[0].evidence[0]),
+      );
+    },
+  ]) {
+    const invalid = structuredClone(predictions);
+    change(invalid);
+    assert.notEqual(score(invalid).status, 0);
+  }
+  const invalidJson = evalCli(
+    "training-eval-score",
+    ["--synthetic"],
+    "RAW-PREDICTION-MARKER",
+  );
+  assert.notEqual(invalidJson.status, 0);
+  assert.match(invalidJson.stderr, /Memory operation failed/);
+  assert.doesNotMatch(invalidJson.stderr, /RAW-PREDICTION-MARKER/);
+  assert.notEqual(
+    evalCli("training-eval-score", ["--synthetic"], " ".repeat(1024 * 1024 + 1))
+      .status,
+    0,
+  );
+  for (const args of [
+    [],
+    ["--synthetic", "--synthetic"],
+    ["--synthetic", "extra"],
+  ])
+    assert.notEqual(
+      evalCli("training-eval-score", args, JSON.stringify(predictions)).status,
+      0,
+    );
+});

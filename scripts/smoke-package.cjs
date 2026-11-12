@@ -176,6 +176,33 @@ async function main() {
         ),
       );
     }
+    const installedCli = join(installed, "bin", "memory.cjs");
+    const requests = JSON.parse(
+      run(process.execPath, [
+        installedCli,
+        "training-eval-requests",
+        "--synthetic",
+      ]),
+    );
+    assert.equal(requests.version, "training-eval-requests-v1");
+    assert.ok(requests.requests.length > 0);
+    const emptyReplay = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [installedCli, "training-eval-score", "--synthetic"],
+        {
+          encoding: "utf8",
+          timeout: 60000,
+          input: JSON.stringify({
+            version: "training-eval-predictions-v1",
+            requestsHash: requests.contentHash,
+            responses: [],
+          }),
+        },
+      ),
+    );
+    assert.equal(emptyReplay.requestsHash, requests.contentHash);
+    assert.equal(emptyReplay.missing, requests.requests.length);
     const source = join(work, "collector-source");
     const collectorArchive = join(work, "collector-archive");
     const manifest = join(work, "collector-manifest.json");

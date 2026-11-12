@@ -21,6 +21,8 @@ function usage() {
   console.log(`Usage: memory <command> --project PROJECT [--dir PRIVATE_DIRECTORY]
 Commands:
   training-manifest --synthetic [--split train|test]
+  training-eval-requests --synthetic
+  training-eval-score --synthetic < PREDICTIONS_JSON
   ingest --source dsh|codex|chatgpt --file FILE --instance INSTANCE --session SESSION
          [--max-records N] [--batch-size N]
   ingest-tree --source dsh|codex --root DIRECTORY --instance INSTANCE [--max-sessions N] [--offset N]
@@ -107,11 +109,33 @@ async function ingestTree(op, values) {
   return result;
 }
 
+async function readEvaluationPredictions() {
+  const chunks = [];
+  let bytes = 0;
+  for await (const chunk of process.stdin) {
+    bytes += chunk.length;
+    if (bytes > 1024 * 1024) throw new Error('Evaluation input exceeds size limit');
+    chunks.push(chunk);
+  }
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
+  return JSON.parse(text);
+}
+
 async function main() {
   const { values, positionals, tokens } = parseArgs({ options, allowPositionals: true, tokens: true });
   const [command, ...extra] = positionals;
   if (values.help || !command) return usage();
   if (extra.length) throw new Error('Unexpected positional argument.');
+  if (command === 'training-eval-requests' || command === 'training-eval-score') {
+    if (values.synthetic !== true || tokens.filter(token => token.kind === 'option' && token.name === 'synthetic').length !== 1 ||
+        Object.keys(values).some(key => key !== 'synthetic')) throw new Error('Invalid synthetic evaluation input');
+    const manifest = require('../lib/generated/synthetic-training-manifest.cjs').buildSyntheticTrainingManifest().manifest;
+    const test = require('../lib/generated/training-split.cjs').exportTrainingSplit(manifest, 'test');
+    const { buildEvaluationRequests, scoreEvaluationResponses } = require('../lib/generated/training-evaluation.cjs');
+    const result = command === 'training-eval-requests' ? buildEvaluationRequests(test) : scoreEvaluationResponses(test, await readEvaluationPredictions());
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
   if (command === 'training-manifest') {
     if (values.synthetic !== true || tokens.filter(token => token.kind === 'option' && token.name === 'synthetic').length !== 1 ||
         tokens.filter(token => token.kind === 'option' && token.name === 'split').length > 1 ||

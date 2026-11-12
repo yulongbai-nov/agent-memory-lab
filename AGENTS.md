@@ -20,7 +20,7 @@
 | 查找、时间、决定与任务状态 | [查询](lib/query.cjs)、[时间比较](src/query-time.cts)、[预览](src/find-preview.cts)、[任务状态](lib/task-state.cjs) | [时间语义](spec/query-time.md)、[任务观察](spec/task-state-observations.md)、[预览](spec/find-preview-v0.1.md) |
 | 每日整理、本地 Writer、缓存与恢复 | [每日入口](lib/daily.cjs)、[草稿生成](lib/local-derive.cjs)、[草稿索引](lib/local-draft-index.cjs)、[队列](src/local-draft-state.cts)、[资源准入](src/local-admission.cts) | [恢复契约](spec/local-draft-recovery.md)、[资源准入](spec/local-admission-wait.md) |
 | 候选格式、草稿读取与审阅来源链 | [模型输出契约](src/candidate-contract-v2.cts)、[审核契约](src/candidate-review-contract.cts)、[v1 读取](src/local-draft-read.cts)、[v2 读审](src/versioned-review.cts) | [候选契约](spec/candidate-contract-v2.md)、[v1 读取](spec/local-draft-read.md)、[v2 读审](spec/local-draft-review-v2.md) |
-| 本体、图谱与检索对照 | [图投影](src/ontology-projection.cts)、[检索对照](benchmark/memory-views/) | [本体规格](spec/ontology-projection-v0.1.md)、[评测说明](benchmark/memory-views/README.md)、[OntoSmith 研究](spec/research/ontosmith-reuse.md) |
+| 本体、图谱与检索对照 | [图投影](src/ontology-projection.cts)、[检索对照](benchmark/memory-views/) | [Graph + Wiki 设计](spec/graph-wiki-design.md)、[本体规格](spec/ontology-projection-v0.1.md)、[评测说明](benchmark/memory-views/README.md)、[OntoSmith 研究](spec/research/ontosmith-reuse.md) |
 | Agent 使用流程与独立验证 | [共享记忆 Skill](skills/agent-memory/SKILL.md)、[测试](tests/)、[发行包验收](scripts/smoke-package.cjs) | [双 CLI 验收](benchmark/harness-e2e/README.md)、[Luna Writer 对照](benchmark/writer-luna/README.md) |
 
 ## 代码质量要求

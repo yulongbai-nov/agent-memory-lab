@@ -1,0 +1,759 @@
+{
+  "version": "0.1",
+  "scope": {
+    "owner": "synthetic",
+    "project": "moonbridge"
+  },
+  "topic": "Moonbridge lantern route",
+  "fixture": {
+    "originals": [
+      {
+        "ref": "original",
+        "utf8": "{\"type\":\"user\",\"turn_id\":\"dsh-turn-1\",\"message\":\"The blue lantern route is Tuesday.\"}\n"
+      }
+    ],
+    "batches": [
+      {
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "source": {
+          "harness": "dsh",
+          "instance": "fixture",
+          "session": "routing"
+        },
+        "checkpoint": {
+          "position": 1
+        },
+        "items": [
+          {
+            "id": "route-tuesday",
+            "kind": "message",
+            "role": "user",
+            "text": "The blue lantern route is Tuesday.",
+            "time": "2026-04-07T09:00:00Z",
+            "turnId": "dsh-turn-1",
+            "metadata": {
+              "topic": "Moonbridge lantern route",
+              "original": {
+                "availability": "archived",
+                "format": "jsonl-record",
+                "coordinate": 1,
+                "sha256": "2fc3b3ac2f71eef3de056adbececb6a451402c32bc6d265e9624c6c79ff6855e",
+                "bytes": 86
+              }
+            }
+          },
+          {
+            "id": "route-clarification",
+            "kind": "message",
+            "role": "user",
+            "text": "Tuesday means the dry run, not the public walk.",
+            "time": "2026-04-07T09:05:00Z",
+            "turnId": "dsh-turn-2",
+            "metadata": {
+              "topic": "Moonbridge lantern route"
+            }
+          },
+          {
+            "id": "route-checklist",
+            "kind": "message",
+            "role": "user",
+            "text": "Print the route checklist.",
+            "time": "2026-04-07T10:00:00Z",
+            "turnId": "dsh-turn-3",
+            "metadata": {
+              "topic": "Moonbridge lantern route"
+            }
+          },
+          {
+            "id": "route-dependency",
+            "kind": "message",
+            "role": "user",
+            "text": "The checklist depends on the active lantern route.",
+            "time": "2026-04-07T10:05:00Z",
+            "turnId": "dsh-turn-4",
+            "metadata": {
+              "topic": "Moonbridge lantern route"
+            }
+          },
+          {
+            "id": "decoy-1",
+            "kind": "message",
+            "role": "user",
+            "text": "A blue lantern inventory entry.",
+            "time": "2026-04-07T08:01:00Z",
+            "turnId": "dsh-decoy-1",
+            "metadata": {
+              "topic": "Blue lantern spare wicks"
+            }
+          },
+          {
+            "id": "decoy-2",
+            "kind": "message",
+            "role": "user",
+            "text": "A blue lantern inventory entry.",
+            "time": "2026-04-07T08:02:00Z",
+            "turnId": "dsh-decoy-2",
+            "metadata": {
+              "topic": "Blue lantern storage"
+            }
+          },
+          {
+            "id": "decoy-3",
+            "kind": "message",
+            "role": "user",
+            "text": "A blue lantern inventory entry.",
+            "time": "2026-04-07T08:03:00Z",
+            "turnId": "dsh-decoy-3",
+            "metadata": {
+              "topic": "Blue lantern loan"
+            }
+          },
+          {
+            "id": "decoy-4",
+            "kind": "message",
+            "role": "user",
+            "text": "A blue lantern inventory entry.",
+            "time": "2026-04-07T08:04:00Z",
+            "turnId": "dsh-decoy-4",
+            "metadata": {
+              "topic": "Blue lantern battery"
+            }
+          },
+          {
+            "id": "decoy-5",
+            "kind": "message",
+            "role": "user",
+            "text": "A blue lantern inventory entry.",
+            "time": "2026-04-07T08:05:00Z",
+            "turnId": "dsh-decoy-5",
+            "metadata": {
+              "topic": "Blue lantern workshop"
+            }
+          }
+        ]
+      },
+      {
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "source": {
+          "harness": "dsh",
+          "instance": "fixture",
+          "session": "routing"
+        },
+        "checkpoint": {
+          "position": 2,
+          "previous": 1
+        },
+        "items": [
+          {
+            "id": "route-tuesday",
+            "kind": "message",
+            "role": "user",
+            "text": "Tuesday is the dry run.",
+            "time": "2026-04-07T09:00:00Z",
+            "turnId": "dsh-turn-1",
+            "metadata": {
+              "topic": "Moonbridge lantern route"
+            }
+          }
+        ]
+      },
+      {
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "source": {
+          "harness": "codex",
+          "instance": "fixture",
+          "session": "routing"
+        },
+        "checkpoint": {
+          "position": 1
+        },
+        "items": [
+          {
+            "id": "route-wednesday",
+            "kind": "message",
+            "role": "user",
+            "text": "Move the dry run to Wednesday starting at 12:00 UTC.",
+            "time": "2026-04-07T11:00:00Z",
+            "turnId": "codex-turn-1",
+            "metadata": {
+              "topic": "Moonbridge lantern route"
+            }
+          },
+          {
+            "id": "route-proposal",
+            "kind": "message",
+            "role": "user",
+            "text": "Could the lantern route move again to Thursday?",
+            "time": "2026-04-07T13:01:00Z",
+            "turnId": "codex-turn-2",
+            "metadata": {
+              "topic": "Moonbridge lantern route"
+            }
+          },
+          {
+            "id": "route-completed",
+            "kind": "message",
+            "role": "user",
+            "text": "The route checklist is printed and ready.",
+            "time": "2026-04-07T13:30:00Z",
+            "turnId": "codex-turn-3",
+            "metadata": {
+              "topic": "Moonbridge lantern route"
+            }
+          }
+        ]
+      },
+      {
+        "scope": {
+          "owner": "synthetic",
+          "project": "starbridge"
+        },
+        "source": {
+          "harness": "codex",
+          "instance": "fixture",
+          "session": "routing"
+        },
+        "checkpoint": {
+          "position": 1
+        },
+        "items": [
+          {
+            "id": "route-wednesday",
+            "kind": "message",
+            "role": "user",
+            "text": "A foreign blue lantern route is on Friday.",
+            "time": "2026-04-07T14:00:00Z",
+            "turnId": "codex-turn-1",
+            "metadata": {
+              "topic": "Moonbridge lantern route"
+            }
+          }
+        ]
+      }
+    ],
+    "annotations": [
+      {
+        "id": "route-decision",
+        "kind": "decision",
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "target": {
+          "id": "route-tuesday",
+          "revision": "abd806eaae68c0b3efc43b163f191da0949cd776df7462cf8751463656c86634",
+          "source": {
+            "harness": "dsh",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        },
+        "topic": "Moonbridge lantern route",
+        "text": "The public walk is Tuesday.",
+        "basis": "confirmed",
+        "lifecycle": "active",
+        "valid_time": "2026-04-07T09:00:00Z"
+      },
+      {
+        "id": "route-correction",
+        "kind": "correction",
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "target": {
+          "id": "route-tuesday",
+          "revision": "abd806eaae68c0b3efc43b163f191da0949cd776df7462cf8751463656c86634",
+          "source": {
+            "harness": "dsh",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        },
+        "topic": "Moonbridge lantern route",
+        "text": "The dry run is Tuesday.",
+        "revises": "route-decision",
+        "evidence": {
+          "id": "route-clarification",
+          "revision": "c4759add3a9a7e6d173191beeb6c270370ad0e88cd6854cd628c8a2ff03111b7",
+          "source": {
+            "harness": "dsh",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        }
+      },
+      {
+        "id": "route-change",
+        "kind": "change",
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "target": {
+          "id": "route-wednesday",
+          "revision": "979326e6c5bf4e4310ff5042bb3b6892dc3ac68bcfa3f8fa612a7d518953a37e",
+          "source": {
+            "harness": "codex",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        },
+        "topic": "Moonbridge lantern route",
+        "text": "The dry run is Wednesday.",
+        "basis": "confirmed",
+        "lifecycle": "active",
+        "revises": "route-decision",
+        "valid_time": "2026-04-07T12:00:00Z"
+      },
+      {
+        "id": "route-proposed-change",
+        "kind": "change",
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "target": {
+          "id": "route-proposal",
+          "revision": "0bdb63ad17eae570bdfbf8ba8ccbd6ad07ea102afe3746291b88140023d51bb9",
+          "source": {
+            "harness": "codex",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        },
+        "topic": "Moonbridge lantern route",
+        "text": "Consider moving the dry run to Thursday.",
+        "basis": "proposed",
+        "lifecycle": "active",
+        "revises": "route-change",
+        "valid_time": "2026-04-07T13:01:00Z"
+      },
+      {
+        "id": "route-todo",
+        "kind": "todo",
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "target": {
+          "id": "route-checklist",
+          "revision": "28cbbfad7ec648e51786c36fe196932200784201644c3df53b7e2ac944a524f8",
+          "source": {
+            "harness": "dsh",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        },
+        "topic": "Moonbridge lantern route",
+        "text": "Print the route checklist."
+      },
+      {
+        "kind": "task-state",
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "target": {
+          "id": "route-checklist",
+          "revision": "28cbbfad7ec648e51786c36fe196932200784201644c3df53b7e2ac944a524f8",
+          "source": {
+            "harness": "dsh",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        },
+        "taskRoot": {
+          "kind": "annotation",
+          "id": "route-todo"
+        },
+        "id": "route-task-open",
+        "text": "Checklist is ready to print.",
+        "parents": [],
+        "state": "open",
+        "evidenceKind": "operator"
+      }
+    ],
+    "dependencies": [
+      {
+        "id": "route-depends-on",
+        "scope": {
+          "owner": "synthetic",
+          "project": "moonbridge"
+        },
+        "taskId": "route-todo",
+        "decisionId": "route-decision",
+        "approved": true,
+        "evidence": {
+          "id": "route-dependency",
+          "revision": "964e1549d8163aa013dff5c82ff2648440f0683b218b38620a499f545ef382c4",
+          "source": {
+            "harness": "dsh",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        },
+        "quote": "depends on the active lantern route",
+        "effectiveAt": "2026-04-07T10:05:00Z",
+        "knownAt": "2026-04-07T12:45:00Z"
+      }
+    ],
+    "stages": {
+      "completed": {
+        "annotations": [
+          {
+            "kind": "task-state",
+            "scope": {
+              "owner": "synthetic",
+              "project": "moonbridge"
+            },
+            "target": {
+              "id": "route-checklist",
+              "revision": "28cbbfad7ec648e51786c36fe196932200784201644c3df53b7e2ac944a524f8",
+              "source": {
+                "harness": "dsh",
+                "instance": "fixture",
+                "session": "routing"
+              }
+            },
+            "taskRoot": {
+              "kind": "annotation",
+              "id": "route-todo"
+            },
+            "id": "route-task-complete",
+            "text": "Checklist printed.",
+            "parents": ["route-task-open"],
+            "state": "completed",
+            "evidenceKind": "source",
+            "evidence": {
+              "id": "route-completed",
+              "revision": "0d3566fcd94624ff19fc9b37a34b6fde4845280f795b056535b1e0a917d4a299",
+              "source": {
+                "harness": "codex",
+                "instance": "fixture",
+                "session": "routing"
+              }
+            },
+            "occurredAt": "2026-04-07T13:30:00Z"
+          }
+        ]
+      }
+    }
+  },
+  "references": {
+    "original": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "moonbridge"
+      },
+      "id": "route-tuesday",
+      "revision": "abd806eaae68c0b3efc43b163f191da0949cd776df7462cf8751463656c86634",
+      "source": {
+        "harness": "dsh",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    },
+    "newer": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "moonbridge"
+      },
+      "id": "route-tuesday",
+      "revision": "76412b9a2ef68f17227a366a2e20c4204fc7a533e094abad7e15f4315998157d",
+      "source": {
+        "harness": "dsh",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    },
+    "clarify": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "moonbridge"
+      },
+      "id": "route-clarification",
+      "revision": "c4759add3a9a7e6d173191beeb6c270370ad0e88cd6854cd628c8a2ff03111b7",
+      "source": {
+        "harness": "dsh",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    },
+    "task": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "moonbridge"
+      },
+      "id": "route-checklist",
+      "revision": "28cbbfad7ec648e51786c36fe196932200784201644c3df53b7e2ac944a524f8",
+      "source": {
+        "harness": "dsh",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    },
+    "relation": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "moonbridge"
+      },
+      "id": "route-dependency",
+      "revision": "964e1549d8163aa013dff5c82ff2648440f0683b218b38620a499f545ef382c4",
+      "source": {
+        "harness": "dsh",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    },
+    "move": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "moonbridge"
+      },
+      "id": "route-wednesday",
+      "revision": "979326e6c5bf4e4310ff5042bb3b6892dc3ac68bcfa3f8fa612a7d518953a37e",
+      "source": {
+        "harness": "codex",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    },
+    "proposal": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "moonbridge"
+      },
+      "id": "route-proposal",
+      "revision": "0bdb63ad17eae570bdfbf8ba8ccbd6ad07ea102afe3746291b88140023d51bb9",
+      "source": {
+        "harness": "codex",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    },
+    "complete": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "moonbridge"
+      },
+      "id": "route-completed",
+      "revision": "0d3566fcd94624ff19fc9b37a34b6fde4845280f795b056535b1e0a917d4a299",
+      "source": {
+        "harness": "codex",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    },
+    "foreign": {
+      "scope": {
+        "owner": "synthetic",
+        "project": "starbridge"
+      },
+      "id": "route-wednesday",
+      "revision": "a5e3254fb8c5b339be12e35d3c955bf1fd1e4876c6846543537def4dda491bda",
+      "source": {
+        "harness": "codex",
+        "instance": "fixture",
+        "session": "routing"
+      }
+    }
+  },
+  "queries": [
+    {
+      "id": "candidates",
+      "text": "Find the lantern route from a clue.",
+      "request": {
+        "kind": "find",
+        "keyword": "blue lantern",
+        "limit": 5
+      }
+    },
+    {
+      "id": "current",
+      "text": "Open the same reviewed route in the project and the topic view.",
+      "request": {
+        "kind": "current",
+        "topic": "Moonbridge lantern route",
+        "asOf": "2026-04-07T13:10:00Z"
+      }
+    },
+    {
+      "id": "revision-kind",
+      "text": "Which event clarified the original decision and which changed it?",
+      "request": {
+        "kind": "timeline",
+        "topic": "Moonbridge lantern route"
+      }
+    },
+    {
+      "id": "old-evidence",
+      "text": "Open the exact DSH turn referenced by the original decision.",
+      "request": {
+        "kind": "evidence",
+        "citation": {
+          "id": "route-tuesday",
+          "revision": "abd806eaae68c0b3efc43b163f191da0949cd776df7462cf8751463656c86634",
+          "source": {
+            "harness": "dsh",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        }
+      }
+    },
+    {
+      "id": "change-evidence",
+      "text": "Open the exact Codex turn referenced by the later decision.",
+      "request": {
+        "kind": "evidence",
+        "citation": {
+          "id": "route-wednesday",
+          "revision": "979326e6c5bf4e4310ff5042bb3b6892dc3ac68bcfa3f8fa612a7d518953a37e",
+          "source": {
+            "harness": "codex",
+            "instance": "fixture",
+            "session": "routing"
+          }
+        }
+      }
+    },
+    {
+      "id": "effective-boundary",
+      "text": "Was the future change applicable at 11:59 or at 12:00?",
+      "request": {
+        "kind": "temporal-comparison",
+        "topic": "Moonbridge lantern route",
+        "validTimes": ["2026-04-07T11:59:00Z", "2026-04-07T12:00:00Z"],
+        "retrospective": true
+      }
+    },
+    {
+      "id": "dependency-time",
+      "text": "At 12:30, was the checklist dependency supported by what was known then or by 13:00?",
+      "request": {
+        "kind": "open-dependency",
+        "asOf": "2026-04-07T12:30:00Z",
+        "knowledgeCutoffs": ["2026-04-07T12:30:00Z", "2026-04-07T13:00:00Z"],
+        "decisionRootId": "route-decision"
+      }
+    },
+    {
+      "id": "task-continuation",
+      "text": "What can be resumed before and after an explicit completion observation?",
+      "request": {
+        "kind": "task-list",
+        "stages": ["base", "completed"]
+      }
+    }
+  ],
+  "expected": {
+    "candidates": {
+      "status": "resolved",
+      "facts": ["Moonbridge lantern route"],
+      "support": [["original"]],
+      "relevant": ["original"],
+      "assertions": {
+        "returned": 5,
+        "total": 6,
+        "has_more": true,
+        "excludedReferences": ["newer", "foreign"]
+      }
+    },
+    "current": {
+      "status": "resolved",
+      "facts": ["The dry run is Wednesday."],
+      "support": [["move"]],
+      "relevant": ["move", "proposal"],
+      "assertions": {
+        "review_id": "route-change",
+        "label": "已确定",
+        "sameReviewInBothEntries": true,
+        "pending": [
+          {
+            "review_id": "route-proposed-change",
+            "label": "待决定"
+          }
+        ]
+      }
+    },
+    "revision-kind": {
+      "status": "resolved",
+      "facts": ["correction", "change"],
+      "support": [["original", "clarify", "move"]],
+      "relevant": ["original", "clarify", "move", "proposal"],
+      "assertions": {
+        "originalReviewId": "route-decision",
+        "correctionId": "route-correction",
+        "confirmedChangeId": "route-change",
+        "confirmedChangeRevises": "route-decision",
+        "proposalDoesNotSupersede": true
+      }
+    },
+    "old-evidence": {
+      "status": "resolved",
+      "facts": ["The blue lantern route is Tuesday."],
+      "support": [["original"]],
+      "relevant": ["original", "newer"],
+      "assertions": {
+        "turnId": "dsh-turn-1",
+        "originalAvailability": "archived",
+        "newerIsDifferent": true
+      }
+    },
+    "change-evidence": {
+      "status": "resolved",
+      "facts": ["Move the dry run to Wednesday starting at 12:00 UTC."],
+      "support": [["move"]],
+      "relevant": ["move", "foreign"],
+      "assertions": {
+        "turnId": "codex-turn-1",
+        "originalAvailability": "source-only"
+      }
+    },
+    "effective-boundary": {
+      "status": "resolved",
+      "facts": ["route-decision", "route-change"],
+      "support": [["original", "move"]],
+      "relevant": ["original", "clarify", "move"],
+      "assertions": {
+        "correctionHistoricalTime": "unknown"
+      }
+    },
+    "dependency-time": {
+      "status": "resolved",
+      "facts": ["absent", "present"],
+      "support": [["task", "relation", "move"]],
+      "relevant": ["task", "relation", "move"],
+      "assertions": {
+        "effectiveAt": "2026-04-07T10:05:00Z",
+        "knownAt": "2026-04-07T12:45:00Z"
+      }
+    },
+    "task-continuation": {
+      "status": "resolved",
+      "facts": ["open", "completed"],
+      "support": [["task", "complete"]],
+      "relevant": ["task", "complete", "move"],
+      "assertions": {
+        "root": {
+          "kind": "annotation",
+          "id": "route-todo"
+        },
+        "baseNextStep": "Print the route checklist.",
+        "completedOmittedFromTaskList": true,
+        "completedRemainsInTimeline": true,
+        "decisionReviewUnchanged": "route-change"
+      }
+    }
+  }
+}

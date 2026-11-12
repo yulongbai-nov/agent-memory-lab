@@ -332,6 +332,25 @@ test("versioned candidates publish and explicit decision/todo reviews retain lin
   } finally {
     archive.close?.();
   }
+  await f.append("A later synthetic revision.");
+  const oldSource = f.cmd([
+    "draft-show",
+    "--format",
+    "v2",
+    "--id",
+    snapshot + ":1",
+  ]).output;
+  assert.equal(oldSource.candidate.evidence[0].sourceStatus, "older-version");
+  const oldReview = f.cmd([
+    "draft-review-show",
+    "--review-id",
+    decision.output.id,
+  ]).output;
+  assert.equal(oldReview.candidate.evidence[0].sourceStatus, "older-version");
+  assert.equal(
+    oldReview.candidate.evidence[0].version,
+    draft.candidates[0].evidence[0].version,
+  );
   const snapshotFile = join(
       f.dir,
       "local-derive",

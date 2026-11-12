@@ -46,13 +46,24 @@ const { verifyDeclaredProjection, previewDeclaredProjection } = createRequire(
   previewDeclaredProjection: (row: unknown, p: Projection) => string | null;
 };
 type Scope = { owner: string; project: string };
+type EvidenceRow = {
+  item: {
+    text?: string | null;
+    role?: string;
+    kind?: string;
+    metadata?: unknown;
+  };
+  source: { harness: string; instance: string; session: string };
+  versionId?: string;
+};
 type Archive = {
   dir: string;
+  backend: "sqlite" | "json";
+  lookupDraftEvidence: (
+    x: unknown,
+  ) => Promise<{ row: EvidenceRow; currentRevision: string } | null>;
   close?: () => void;
-  getItem: (x: unknown) => Promise<{
-    item: { text?: string };
-    source: { harness: string; instance: string; session: string };
-  } | null>;
+  getItem: (x: unknown) => Promise<EvidenceRow | null>;
   addAnnotation: (x: unknown) => Promise<unknown>;
 };
 const max = 96 * 1024,
@@ -252,22 +263,46 @@ async function evidenceDetails(
 ) {
   const details = [];
   for (const evidence of candidate.evidence) {
-    const row = await archive.getItem({
-      ...scope,
-      source: splitSource(evidence.source),
-      id: evidence.item,
-      revision: evidence.version,
-    });
+    const source = splitSource(evidence.source);
+    let row: EvidenceRow | null, currentRevision: string | undefined;
+    if (archive.backend === "sqlite") {
+      const found = await archive.lookupDraftEvidence({
+        ...scope,
+        source,
+        id: evidence.item,
+        revision: evidence.version,
+      });
+      row = found
+        ? { ...found.row, item: { ...found.row.item, kind: "message" } }
+        : null;
+      currentRevision = found?.currentRevision;
+    } else {
+      row = await archive.getItem({
+        ...scope,
+        source,
+        id: evidence.item,
+        revision: evidence.version,
+      });
+      const current = await archive.getItem({
+        ...scope,
+        source,
+        id: evidence.item,
+      });
+      currentRevision = current?.versionId;
+    }
     if (!row) {
       details.push({
         source: evidence.source,
         item: evidence.item,
         version: evidence.version,
+        sourceStatus: "missing",
         quoteStatus: "unverified",
         originalStatus: "unknown",
       });
       continue;
     }
+    const sourceStatus =
+      currentRevision === evidence.version ? "current" : "older-version";
     let status = "unverified",
       originalStatus = "unknown";
     for (const p of inputs.filter((x) => sameRef(x, evidence))) {
@@ -286,6 +321,7 @@ async function evidenceDetails(
       source: evidence.source,
       item: evidence.item,
       version: evidence.version,
+      sourceStatus,
       quoteStatus: status,
       originalStatus,
       ...(status !== "unverified" ? { quote: evidence.quote } : {}),

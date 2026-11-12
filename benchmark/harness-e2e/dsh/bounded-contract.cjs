@@ -55,7 +55,8 @@ async function mcp(root) {
 }
 async function main(cli) {
   assert.ok(path.isAbsolute(cli || ""), "Explicit DSH executable required");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-bounded-")),
+  const temporaryParent = process.env.MEMLAB_DSH_REPLAY_TMP || os.tmpdir();
+  const root = fs.mkdtempSync(path.join(temporaryParent, "dsh-bounded-")),
     home = path.join(root, "profile");
   fs.mkdirSync(home);
   const ledger = path.join(root, "ledger");

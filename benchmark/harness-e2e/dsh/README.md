@@ -7,3 +7,12 @@ The separate trusted runner starts `/opt/dsh-test/run.cjs` explicitly. It uses a
 Builds fetch the version-pinned official package from npm. The Node base image is pinned by release tag. The [tagged DSH CLI documentation](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.1/apps/cli/README.md) describes the headless entry point and profiles.
 
 The synthetic bounded Responses replay is `node bounded-contract.cjs <absolute-path-to-dsh>` with DSH 0.2.2-rc.1. Run it only inside a disposable environment that blocks access to user profiles and credentials and restricts outbound network to loopback. It creates a synthetic archive and profile, uses a fake local provider, and exercises find, timeline, and evidence through the bounded relay. The script does not itself enforce the operating-system network boundary. A macOS run is separate evidence from the Linux container gates.
+
+On macOS, run the same replay against the installed app's CLI from the repository root.
+
+```sh
+benchmark/harness-e2e/run-dsh-native-macos.sh \
+  '/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh'
+```
+
+The wrapper uses macOS `sandbox-exec` for loopback access and a disposable writable directory. The replay receives only a fake provider token and creates disposable DSH profiles. Use a trusted installed executable. The output records synthetic CLI completion. Desktop profile registration and live-session tool availability have separate acceptance checks.

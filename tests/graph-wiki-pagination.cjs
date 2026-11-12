@@ -94,7 +94,10 @@ async function main() {
       headless: true,
       args: ["--no-first-run"],
     });
-    const context = await browser.newContext({ serviceWorkers: "block" });
+    const context = await browser.newContext({
+      serviceWorkers: "block",
+      timezoneId: "UTC",
+    });
     const external = [];
     await context.route("**/*", async (route) => {
       const url = new URL(route.request().url());
@@ -429,6 +432,36 @@ async function main() {
       session: "routing",
     });
     assert.equal(evidence.turnId, "codex-turn-1");
+    assert.match(
+      await page.locator("#source-history").locator("..").innerText(),
+      /跨话题审核引用的来源可能不在此列表中/,
+    );
+    await page.locator('#search input[name="keyword"]').fill("");
+    await page.locator('#search input[name="from"]').fill("2026-04-07");
+    await page.locator('#search input[name="to"]').fill("2026-04-07");
+    const filteredFind = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/api/find",
+    );
+    await page.locator("#search button").click();
+    await filteredFind;
+    const filteredReview = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/reviewed-timeline-page" &&
+        url.searchParams.get("from") === "2026-04-07T00:00:00.000Z" &&
+        url.searchParams.get("to") === "2026-04-08T00:00:00.000Z"
+      );
+    });
+    await page
+      .locator("#topics")
+      .getByRole("button", { name: /Moonbridge lantern route/ })
+      .click();
+    const filteredPage = await (await filteredReview).json();
+    assert.equal(filteredPage.rows.length, 20);
+    assert.ok(filteredPage.nextCursor);
+    await reviewMore.click();
+    await page.getByText("已到所选时间范围的审核历史末页").waitFor();
+    assert.equal(await reviewMore.isHidden(), true);
     assert.equal(sha(await fs.readFile(rawPath)), originalHash);
     assert.equal(sha(await fs.readFile(archivedPath)), originalHash);
     assert.equal(sha(await fs.readFile(archivePath)), archiveHash);

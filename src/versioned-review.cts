@@ -345,7 +345,7 @@ async function publish(options: {
     receipt.scope.project !== scope.project
   )
     throw Error("Receipt scope mismatch");
-  const archive = await openArchive({ dir: options.dir, readOnly: false });
+  const archive = await openArchive({ dir: options.dir, readOnly: true });
   try {
     return await withWriterLock(archive.dir, "draft-v2:" + key, async () => {
       await verify(

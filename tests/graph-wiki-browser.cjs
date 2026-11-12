@@ -88,9 +88,7 @@ async function main() {
 
     async function selectFrom(entry) {
       await entry.click();
-      await page
-        .locator('#search input[name="keyword"]')
-        .fill("Moonbridge lantern route");
+      await page.locator('#search input[name="keyword"]').fill("blue lantern");
       await page.locator("#search button").click();
       await page
         .locator("#topics")
@@ -145,7 +143,7 @@ async function main() {
       .filter({ hasText: "Print the route checklist." });
     assert.match(await oldDecision.innerText(), /已替代/);
     assert.match(await newDecision.innerText(), /已确定/);
-    assert.match(await taskItem.innerText(), /未完任务/);
+    assert.match(await taskItem.innerText(), /任务.*未完成/);
     assert.doesNotMatch(await taskItem.innerText(), /已确定|已替代/);
 
     // The visible timeline item must invoke the real evidence endpoint with its exact source.

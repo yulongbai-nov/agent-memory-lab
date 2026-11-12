@@ -71,6 +71,127 @@ async function main() {
         valid_time: new Date(Date.UTC(2026, 3, 7, 9, index + 1)).toISOString(),
       });
     }
+    const evidenceSource = {
+      harness: "dsh",
+      instance: "fixture",
+      session: "evidence-navigation",
+    };
+    const proofSource = { ...evidenceSource, harness: "codex" };
+    const evidenceTopic = "Evidence lane";
+    await archive.importBatch({
+      scope: scenario.scope,
+      source: evidenceSource,
+      checkpoint: { position: 1 },
+      items: [
+        {
+          id: "evidence-root",
+          kind: "message",
+          text: "Evidence lane root",
+          time: "2026-01-01T00:00:00Z",
+          turnId: "root-turn",
+          metadata: { topic: evidenceTopic },
+        },
+      ],
+    });
+    await archive.importBatch({
+      scope: scenario.scope,
+      source: proofSource,
+      checkpoint: { position: 1 },
+      items: ["correction-proof", "state-proof"].map((id) => ({
+        id,
+        kind: "message",
+        text: `Independent synthetic ${id}`,
+        time: "2026-01-02T00:00:00Z",
+        turnId: `${id}-turn`,
+        metadata: { topic: "Other evidence topic" },
+      })),
+    });
+    const exactRef = async (id, source) => {
+      const record = await archive.getItem({ ...scenario.scope, id, source });
+      return { id, revision: record.versionId, source };
+    };
+    const rootRef = await exactRef("evidence-root", evidenceSource);
+    const correctionProof = await exactRef("correction-proof", proofSource);
+    const stateProof = await exactRef("state-proof", proofSource);
+    for (let i = 0; i < 105; i++) {
+      await archive.addAnnotation({
+        id: `evidence-fill-${i}`,
+        scope: scenario.scope,
+        kind: "decision",
+        topic: evidenceTopic,
+        text: `Earlier synthetic decision ${i}`,
+        target: rootRef,
+        valid_time: new Date(Date.UTC(2025, 0, 1, 0, i)).toISOString(),
+      });
+    }
+    await archive.addAnnotation({
+      id: "evidence-decision",
+      scope: scenario.scope,
+      kind: "decision",
+      topic: evidenceTopic,
+      text: "Evidence lane reviewed decision",
+      target: rootRef,
+    });
+    await archive.addAnnotation({
+      id: "evidence-correction",
+      scope: scenario.scope,
+      kind: "correction",
+      text: "Corrected with independent proof",
+      target: rootRef,
+      revises: "evidence-decision",
+      evidence: correctionProof,
+    });
+    await archive.addAnnotation({
+      id: "evidence-correction-no-source",
+      scope: scenario.scope,
+      kind: "correction",
+      text: "Correction without source",
+      target: rootRef,
+      revises: "evidence-decision",
+    });
+    await archive.addAnnotation({
+      id: "evidence-task",
+      scope: scenario.scope,
+      kind: "todo",
+      topic: evidenceTopic,
+      text: "Evidence lane reviewed task",
+      target: rootRef,
+    });
+    const taskRoot = { kind: "annotation", id: "evidence-task" };
+    await archive.addAnnotation({
+      id: "state-start",
+      scope: scenario.scope,
+      kind: "task-state",
+      text: "Start",
+      taskRoot,
+      parents: [],
+      state: "open",
+      evidenceKind: "operator",
+      target: rootRef,
+    });
+    await archive.addAnnotation({
+      id: "state-source",
+      scope: scenario.scope,
+      kind: "task-state",
+      text: "Source completed",
+      taskRoot,
+      parents: ["state-start"],
+      state: "completed",
+      evidenceKind: "source",
+      target: rootRef,
+      evidence: stateProof,
+    });
+    await archive.addAnnotation({
+      id: "state-operator",
+      scope: scenario.scope,
+      kind: "task-state",
+      text: "Operator paused",
+      taskRoot,
+      parents: ["state-start"],
+      state: "paused",
+      evidenceKind: "operator",
+      target: rootRef,
+    });
     archive.close?.();
     await migrateJsonToSqlite({ dir });
     archive = await openArchive({ dir, readOnly: true });
@@ -462,6 +583,123 @@ async function main() {
     await reviewMore.click();
     await page.getByText("已到所选时间范围的审核历史末页").waitFor();
     assert.equal(await reviewMore.isHidden(), true);
+    // A separate topic exceeds the graph cap, so these later reviewed rows are
+    // exercised through the paged history rather than the visual graph.
+    await page.locator('#search input[name="from"]').fill("");
+    await page.locator('#search input[name="to"]').fill("");
+    await page.locator('#search input[name="keyword"]').fill("Evidence lane");
+    await page.locator("#search button").click();
+    const graphResponse = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === "/api/graph" &&
+        url.searchParams.get("topic") === evidenceTopic
+      );
+    });
+    await page
+      .locator("#topics")
+      .getByRole("button", { name: /Evidence lane/ })
+      .click();
+    const cappedGraph = await (await graphResponse).json();
+    assert.equal(cappedGraph.truncated, true);
+    assert.equal(cappedGraph.rows.length, 100);
+    assert.ok(
+      !cappedGraph.rows.some((row) =>
+        ["evidence-decision", "evidence-correction", "evidence-task"].includes(
+          row.id,
+        ),
+      ),
+    );
+    await page.waitForFunction(() =>
+      document
+        .querySelector("#selected-topic")
+        .textContent.includes("Evidence lane"),
+    );
+    const laneMore = page.getByTestId("reviewed-timeline-load-more");
+    for (
+      let i = 0;
+      i < 10 &&
+      !(await page
+        .locator("#timeline > div")
+        .filter({ hasText: "Evidence lane reviewed decision" })
+        .count());
+      i++
+    ) {
+      await laneMore.waitFor({ state: "visible" });
+      const count = await page.locator("#timeline > div").count();
+      await laneMore.click();
+      await page.waitForFunction(
+        (n) => document.querySelector("#timeline").children.length > n,
+        count,
+      );
+    }
+    const decisionRow = page
+      .locator("#timeline > div")
+      .filter({ hasText: "Evidence lane reviewed decision" });
+    const taskRow = page
+      .locator("#timeline > div")
+      .filter({ hasText: "Evidence lane reviewed task" });
+    await decisionRow.waitFor();
+    await taskRow.waitFor();
+    assert.ok((await page.locator("#timeline > div").count()) > 100);
+    assert.equal(
+      await decisionRow
+        .getByRole("button", { name: "查看证据", exact: true })
+        .count(),
+      1,
+    );
+    assert.equal(
+      await decisionRow.getByRole("button", { name: "查看纠正证据" }).count(),
+      1,
+    );
+    assert.match(await decisionRow.innerText(), /未附来源证据/);
+    assert.match(await taskRow.innerText(), /操作员声明/);
+    assert.match(await taskRow.innerText(), /任务状态 · 状态冲突/);
+    assert.equal(
+      await taskRow.getByRole("button", { name: "查看状态证据" }).count(),
+      1,
+    );
+    const assertProof = async (button, expected) => {
+      const requested = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          url.pathname === "/api/evidence" &&
+          JSON.parse(url.searchParams.get("citation") || "{}").id ===
+            expected.id
+        );
+      });
+      await button.focus();
+      await page.keyboard.press("Enter");
+      const response = await requested;
+      assert.deepEqual(
+        JSON.parse(new URL(response.url()).searchParams.get("citation")),
+        expected,
+      );
+      await page.waitForFunction(
+        (id) => document.querySelector("#evidence").textContent.includes(id),
+        expected.id,
+      );
+      const evidence = JSON.parse(await page.locator("#evidence").innerText());
+      assert.equal(evidence.id, expected.id);
+      assert.equal(evidence.revision, expected.revision);
+      assert.deepEqual(evidence.source, expected.source);
+      assert.equal(evidence.turnId, `${expected.id}-turn`);
+    };
+    await assertProof(
+      decisionRow.getByRole("button", { name: "查看纠正证据" }),
+      correctionProof,
+    );
+    // Reset the evidence before the second activation so a stale panel cannot pass.
+    await decisionRow
+      .getByRole("button", { name: "查看证据", exact: true })
+      .click();
+    await page.waitForFunction(() =>
+      document.querySelector("#evidence").textContent.includes("evidence-root"),
+    );
+    await assertProof(
+      taskRow.getByRole("button", { name: "查看状态证据" }),
+      stateProof,
+    );
     assert.equal(sha(await fs.readFile(rawPath)), originalHash);
     assert.equal(sha(await fs.readFile(archivedPath)), originalHash);
     assert.equal(sha(await fs.readFile(archivePath)), archiveHash);

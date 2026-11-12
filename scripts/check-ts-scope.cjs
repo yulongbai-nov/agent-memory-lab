@@ -6,6 +6,7 @@ const legacyJavaScript = require("./legacy-js-scope.json");
 const typescript = [
   "src/reviewed-page.cts",
   "src/training-manifest.cts",
+  "src/training-split.cts",
   "src/synthetic-training-manifest.cts",
   "src/graph-wiki-browser.cts",
   "src/graph-wiki-view.cts",

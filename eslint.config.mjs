@@ -13,6 +13,7 @@ export default defineConfig([
       "src/repair-original.cts",
       "src/reviewed-page.cts",
       "src/training-manifest.cts",
+      "src/training-split.cts",
       "src/synthetic-training-manifest.cts",
       "src/bounded-memory-find.cts",
       "src/bounded-memory-read.cts",

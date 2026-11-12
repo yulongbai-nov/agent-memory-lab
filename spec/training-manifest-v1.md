@@ -6,7 +6,7 @@
 node bin/memory.cjs training-manifest --synthetic
 ```
 
-`fixtures` 记录随包公开合成夹具的路径及 SHA-256。命令从固定路径读取夹具，校验摘要后组装清单。命令参数只接受 `--synthetic`。
+`fixtures` 记录随包公开合成夹具的路径及 SHA-256。命令从固定路径读取夹具，校验摘要后组装清单。命令要求 `--synthetic`，可加 `--split train` 或 `--split test`。
 
 | 字段 | 含义 |
 | --- | --- |
@@ -18,3 +18,16 @@ node bin/memory.cjs training-manifest --synthetic
 构建器要求每条引用匹配精确版本，并有对应训练或评测用途的授权。相同 Harness、实例和会话的修订及作用域副本属于同一分区。可信来源标注了共同会话沿革时，跨 Harness 副本也按同一来源检查。跨分区共享来源会拒绝生成清单。
 
 `buildTrainingManifest` 接收调用方已核实的授权清单。公开合成命令用固定夹具及用途规则建立该输入。真实资料的授权来源核验、派生样本独立评测及模型训练仍待验收。
+
+## 分区导出
+
+```sh
+node bin/memory.cjs training-manifest --synthetic --split train > training-split-train.json
+node bin/memory.cjs training-manifest --synthetic --split test > training-split-test.json
+```
+
+导出先验证完整清单及其内容版本。每份 `training-split-v1` 文件只包含所选分区的样本和这些样本使用的证据授权。`sourceManifestHash` 指向同一份清单，`contentHash` 校验本文件的分区内容。
+
+样本的 `input` 包含问题和同版证据片段，`expected` 包含答案、标签及已知时间。`evidenceRegistry` 按精确引用记录来源摘要、用途、授权标识和已知的共同会话沿革。运行留出评测时，模型输入使用 `input`，答案判定使用 `expected`。
+
+公开合成文件可分别交给训练和评测流程的后续验证。实际训练和模型评测需要独立验收。

@@ -152,6 +152,30 @@ async function main() {
     assert.equal(training.version, "training-manifest-v1");
     assert.ok(training.samples.some((sample) => sample.split === "train"));
     assert.ok(training.samples.some((sample) => sample.split === "test"));
+    for (const split of ["train", "test"]) {
+      const exported = JSON.parse(
+        run(process.execPath, [
+          join(installed, "bin", "memory.cjs"),
+          "training-manifest",
+          "--synthetic",
+          "--split",
+          split,
+        ]),
+      );
+      assert.equal(exported.version, "training-split-v1");
+      assert.equal(exported.split, split);
+      assert.equal(exported.sourceManifestHash, training.contentHash);
+      assert.equal(
+        exported.samples.length,
+        training.samples.filter((sample) => sample.split === split).length,
+      );
+      assert.ok(
+        exported.evidenceRegistry.every(
+          ({ purpose }) =>
+            purpose === (split === "train" ? "training" : "evaluation"),
+        ),
+      );
+    }
     const source = join(work, "collector-source");
     const collectorArchive = join(work, "collector-archive");
     const manifest = join(work, "collector-manifest.json");

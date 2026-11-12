@@ -27,6 +27,7 @@
     "src/candidate-review-contract.cts",
     "src/versioned-review.cts",
     "src/collector.cts",
+    "src/legacy-input-binding.cts",
     "src/query-time.cts"
   ]
 }

@@ -5,7 +5,7 @@
 ## 发布和快照
 
 - `draft-publish` 读取本机规范化 receipt，核对给定的 SHA-256、范围、格式、文件权限和候选引用所用的原件。Receipt 声明 `formatVersion: 2`、`scope`、`producer`、`generatedAt`、`inputProjections` 和 `candidates`，可另附 `originReceiptSha256`。`formatVersion` 与 `producer.outputProtocol: "candidate-v2"` 决定读取规则。`producer` 中的 `writerProtocol`、`recipeIdentity` 和 `outputProtocol` 是报告元数据。发布器记录本机操作员接纳的 receipt 摘要。摘要校验说明文件内容匹配，生产者身份仍为报告状态。
-- 每批至多四个候选，每项一到三处精确证据。Receipt 和快照分别最多 96 KiB。决定候选的 `basis` 只表达生成时的业务判断，候选状态固定为「待核实」。原件按已归档版本、字段、哈希和声明的 UTF-8、UTF-16 范围核验，沿用可见内容及脱敏规则。快照只保存实际核验所用的投影，未用于证据的区间留在 receipt 生产者报告中。
+- 每批至多四个候选，每项一到三处精确证据。Receipt 和快照分别最多 96 KiB。决定候选的 `basis` 只表达生成时的业务判断，候选状态固定为「待核实」。原件按已归档版本、字段、哈希和声明的 UTF-8、UTF-16 范围核验，沿用可见内容及脱敏规则。旧版 Codex 用户输入包装仅核验由同条用户记录佐证的 `<input>` 区间，包装内 transcript 不作为证据。快照只保存实际核验所用的投影，未用于证据的区间留在 receipt 生产者报告中。
 - 快照按完整文件的 SHA-256 存为不可变文件。发布在范围锁内写快照，并按 `--expect-latest` 原子更新指针。相同当前快照可重放。指针已有更新时，旧期望会被拒绝。
 - `draft-list --format v2` 列最新一批。`draft-show --format v2 --id ID` 打开指定的 `快照摘要:序号`。只要旧快照仍保留，就可用旧 ID 定位。省略 `--format` 时使用原来的 v1 读取行为。v2 发布使用独立指针，默认 writer 继续使用 v3。
 
@@ -20,3 +20,5 @@
 ## 合成验收
 
 用保存的公开合成候选验证决定、待办和三处证据。检查旧快照 ID、较旧源版本、跨范围与损坏引用，复验指针竞争和审核重放。验证待办关闭后仍可回查，以及只同步审核和源版本时的胶囊回查。所有命令使用既有本机归档，发布及人工审核流程均可离线完成。
+
+旧 Codex transcript wrapper 的 v2 原件核验要求选中的字段路径恰为唯一的原生 `input_text` 字符串部分的 `payload.content.<index>.text`；其他内容部分不能借助该输入部分通过核验。原件角色、完整哈希、精确 UTF-16/UTF-8 范围及用户转录佐证仍须同时匹配。

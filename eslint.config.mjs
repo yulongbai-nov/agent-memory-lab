@@ -71,6 +71,7 @@ export default defineConfig([
       "lib/task-state.cjs",
       "tests/graph-wiki-view.test.cjs",
       "tests/graph-wiki-browser.cjs",
+      "tests/graph-wiki-pagination.cjs",
       "tests/task-state.test.cjs",
       "tests/task-state-cli.test.cjs",
       "tests/task-state-couch-wire.cjs",
@@ -119,7 +120,7 @@ export default defineConfig([
     },
   },
   {
-    files: ["tests/graph-wiki-browser.cjs"],
+    files: ["tests/graph-wiki-browser.cjs", "tests/graph-wiki-pagination.cjs"],
     languageOptions: { globals: { document: "readonly", URL: "readonly" } },
   },
 ]);

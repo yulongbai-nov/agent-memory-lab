@@ -1,6 +1,6 @@
 # 当前完成计划
 
-更新于 2026-11-12。代码证据基线为 `4bd2be5`，包含截至 PR #31 的交付。当前先验收本机 Codex／DSH 的过去决定回溯和未完任务接续。长期完成条件见[路线图](spec/roadmap.md)，具体行为见[规格目录](spec/README.md)。 [基线合约与同步 CI](https://github.com/yulongbai-nov/agent-memory-lab/actions/runs/43200081640) · [基线公开协议 CI](https://github.com/yulongbai-nov/agent-memory-lab/actions/runs/43200081685)
+更新于 2026-11-12。基础交付证据对应 `4bd2be5`。Graph + Wiki 首轮 Web 交付对应 [PR #34](https://github.com/yulongbai-nov/agent-memory-lab/pull/34)。当前先验收本机 Codex／DSH 的过去决定回溯和未完任务接续。长期完成条件见[路线图](spec/roadmap.md)，具体行为见[规格目录](spec/README.md)。 [基线合约与同步 CI](https://github.com/yulongbai-nov/agent-memory-lab/actions/runs/43200081640) · [基线公开协议 CI](https://github.com/yulongbai-nov/agent-memory-lab/actions/runs/43200081685)
 
 ## 六项目标
 
@@ -25,9 +25,11 @@
 | 真实资料端到端验收 | **进行中**。私有范围、精确来源与用户审核分别验证。 | **独立验收者**在已授权范围完成决定回溯、待办状态和自然运行复核。发布私有结果须有单独授权。 |
 | 下一次自然每日整理 | **待验**。分离档案扫描和候选筛选预算的改动已过公开 CI。 [每日续接 PR](https://github.com/yulongbai-nov/agent-memory-lab/pull/27) | **运行负责人**用调度记录和状态文件核对实际触发与积压。手动检查另行记账。 |
 | Writer 与读者语义质量 | **待验**。公开合成的真实模型结果已记录，离线复现另有证据。默认 Writer 仍为 v3。 [Luna Writer 结果](benchmark/writer-luna/results-20261112.md) · [读者评测](benchmark/memory-views/README.md) | **评测负责人**用独立留出和负例衡量全面语义质量。自动采纳规则仍未定。 |
-| Graph + Wiki 与框架选型 | **进行中**。同一 Web 内两个平级入口已接入本地 Cytoscape.js 和 vis-timeline；跨 Harness 合成浏览器路径通过，精确来源和原档不变得到验证。Graphiti 等框架仍为候选。 [设计与研究](spec/graph-wiki-design.md) · [现有图投影](spec/ontology-projection-v0.1.md) | **架构与评测负责人**继续核验范围、来源和状态边界并对照 Graphiti；底层分页、真实资料和完整 Wiki／ontology 应用另行验收。 |
+| Graph + Wiki 与框架选型 | **进行中**。同一 Web 内两个平级入口已接入本地 Cytoscape.js 和 vis-timeline；跨 Harness 合成浏览器路径通过，精确来源和原档不变得到验证。Graphiti 等框架仍为候选。 [设计与研究](spec/graph-wiki-design.md) · [现有图投影](spec/ontology-projection-v0.1.md) | **架构与评测负责人**继续核验范围、来源和状态边界并对照 Graphiti；审核链有界读取、真实资料和完整 Wiki／ontology 应用另行验收。 |
 | 手机、ChatGPT 官方导出和远端 Host | **暂缓**。保留浏览器离线壳、归一化快照契约及远端配置说明。 [手机接入](spec/mobile-access.md) · [快照契约](spec/chatgpt-snapshot-v1.md) | **产品与宿主集成负责人**在恢复范围后分别验手机真机、官方导出转换和远端主机连通及权限。 |
 
 工作顺序沿用 BFS 后 DFS。先核对来源与可用入口，再深入验证决定与任务两个场景。自动派生候选保留来源与状态，明确审核层支撑已审知识。受控发布依赖可追溯归档、检索、明确策略及相应复核，逐条人工批准不作为预设。训练依赖上述证据以及独立数据治理。更新本页时只追加或修正当前结论，保留[历史验收](spec/midpoint-status.md)中的原始失败和证据边界。
 
 Graph + Wiki 当前迭代已用一个跨 Harness 合成案例验证项目和主题入口、决定变更、待办及精确来源。测试禁用 service worker，不证明新的离线能力；未调用模型。[查询契约提案](spec/graph-wiki-contract-v0.1.md) · [验收场景](benchmark/graph-wiki/README.md)
+
+来源分页使用 SQLite 话题索引，每页返回 20 条精确版本引用。审核历史单独保留决定和任务状态。合成浏览器用例遍历多页，核对跨 Harness 引用及原档完整性。 [分页契约](spec/graph-wiki-contract-v0.1.md#分页来源与审核历史)

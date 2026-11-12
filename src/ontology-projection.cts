@@ -42,6 +42,11 @@ type Review = {
   basis?: string;
   lifecycle?: string;
   valid_time?: string;
+  candidateReview?: {
+    snapshotSha256: string;
+    ordinal: number;
+    candidateSha256: string;
+  };
 };
 type Dependency = {
   id: string;
@@ -63,6 +68,7 @@ type Node = {
   lifecycle: string;
   effectiveAt: string | null;
   evidence: SourceRevision;
+  candidateLineage?: { candidateId: string; candidateSha256: string };
 };
 type Edge = {
   kind: "CORRECTS" | "SUPERSEDES" | "DEPENDS_ON";
@@ -274,6 +280,17 @@ async function rebuildProjection({
       lifecycle: r.lifecycle || "active",
       effectiveAt,
       evidence: target.ref,
+      ...(r.candidateReview
+        ? {
+            candidateLineage: {
+              candidateId:
+                r.candidateReview.snapshotSha256 +
+                ":" +
+                r.candidateReview.ordinal,
+              candidateSha256: r.candidateReview.candidateSha256,
+            },
+          }
+        : {}),
     });
   }
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));

@@ -6,7 +6,7 @@ const { readFile } = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
 
 const options = Object.fromEntries([
-  'dir', 'owner', 'project', 'keyword', 'from', 'to', 'limit', 'id', 'revision',
+  'dir', 'owner', 'project', 'keyword', 'from', 'to', 'limit', 'id', 'revision', 'format', 'receipt', 'receipt-sha256', 'expect-latest', 'review-id', 'primary',
   'source', 'file', 'instance', 'session', 'max-records', 'batch-size', 'port',
   'kind', 'text', 'manifest', 'target', 'evidence', 'task-root', 'parents', 'state', 'evidence-kind', 'occurred-at', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time', 'serve-origin', 'serve-tailnet-user'
 ].map(name => [name, { type: 'string' }]));
@@ -34,6 +34,9 @@ Commands:
   watch --manifest PRIVATE_JSON [--interval SECONDS] [--runs N]
   semantic-status
   task-list --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT
+  draft-publish --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT --receipt FILE --receipt-sha256 HASH --expect-latest HASH|none
+  draft-review --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT --id ID --text TEXT --topic TOPIC [--basis BASIS] [--primary 1|2|3]
+  draft-review-show --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT --review-id ID
   draft-list --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT
   draft-show --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT --id CANDIDATE_ID
   daily [--manifest PRIVATE_JSON] [--local-draft]
@@ -106,6 +109,17 @@ async function main() {
   const [command, ...extra] = positionals;
   if (values.help || !command) return usage();
   if (extra.length) throw new Error('Unexpected positional argument.');
+  if(['draft-publish','draft-review','draft-review-show'].includes(command) || (['draft-list','draft-show'].includes(command) && values.format==='v2')) {
+    const allow={ 'draft-publish':['dir','owner','project','receipt','receipt-sha256','expect-latest'], 'draft-review':['dir','owner','project','id','basis','text','topic','primary'], 'draft-review-show':['dir','owner','project','review-id'], 'draft-list':['dir','owner','project','format'], 'draft-show':['dir','owner','project','format','id'] }[command];
+    if(!values.dir||!values.owner||!values.project||Object.keys(values).some(k=>!allow.includes(k)))throw Error('Invalid versioned draft input');
+    if((command==='draft-show'&&!values.id)||(command==='draft-review-show'&&!values['review-id']))throw Error('Invalid versioned draft input');
+    const v=require('../lib/generated/versioned-review.cjs');let result;
+    if(command==='draft-publish')result=await v.publish({dir:values.dir,owner:values.owner,project:values.project,receipt:values.receipt,receiptSha256:values['receipt-sha256'],expectLatest:values['expect-latest']});
+    else if(command==='draft-review')result=await v.review({dir:values.dir,owner:values.owner,project:values.project,id:values.id,text:values.text,topic:values.topic,...(values.basis!==undefined?{basis:values.basis}:{}),...(values.primary!==undefined?{primary:positiveInt(values.primary,3)}:{})});
+    else if(command==='draft-review-show')result=await v.showReview({dir:values.dir,owner:values.owner,project:values.project,reviewId:values['review-id']});
+    else result=await v.readV2({dir:values.dir,owner:values.owner,project:values.project,...(command==='draft-show'?{id:values.id}:{})});
+    console.log(JSON.stringify(result,null,2));return;
+  }
   if (command === 'draft-list' || command === 'draft-show') {
     const { readLocalDraft } = require('../lib/generated/local-draft-read.cjs');
     const { openStorage } = require('../lib/storage.cjs');

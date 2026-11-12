@@ -12,6 +12,9 @@ const typescript = [
   "src/local-draft-state.cts",
   "src/local-admission.cts",
   "src/local-draft-read.cts",
+  "src/candidate-review-contract.cts",
+  "tests/candidate-review-contract.types.cts",
+  "src/versioned-review.cts",
   "src/collector.cts",
   "src/semantic-queue.cts",
   "src/semantic-validation.cts",
@@ -79,6 +82,8 @@ const lintedJavaScript = [
   "tests/local-derive-recovery.test.cjs",
   "tests/daily-scan-synthetic.test.cjs",
   "tests/local-draft-read.test.cjs",
+  "tests/versioned-review.test.cjs",
+  "tests/versioned-review-portable.test.cjs",
 ];
 const files = execFileSync(
   "git",

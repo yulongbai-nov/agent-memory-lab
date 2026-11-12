@@ -4,6 +4,7 @@ const { execFileSync } = require("node:child_process");
 const legacyJavaScript = require("./legacy-js-scope.json");
 
 const typescript = [
+  "src/reviewed-page.cts",
   "src/graph-wiki-browser.cts",
   "src/graph-wiki-view.cts",
   "src/legacy-input-binding.cts",

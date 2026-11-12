@@ -114,3 +114,25 @@ test('topic source pages preserve scope, revisions, cursor binding and append fe
   }
  }
 });
+
+test('reviewed pages preserve the full timeline and reject stale or rebound cursors',async t=>{
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'reviewed-page-'));t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const scope={owner:'o',project:'p'},source={harness:'h',instance:'i',session:'s'},a=await openArchive({dir});
+ await a.importBatch({scope,source,checkpoint:{position:1},items:Array.from({length:23},(_,i)=>({id:'r'+i,kind:'message',text:'review '+i,time:'2026-01-01T00:00:00Z',metadata:{topic:'T',reviewed:true,kind:i%2?'todo':'decision'}}))});
+ const {createQuery}=require('../lib/query.cjs');
+ for(const backend of ['json','sqlite']) {
+  if(backend==='sqlite') await migrateJsonToSqlite({dir});
+  const archive=await openArchive({dir}),query=createQuery(archive);t.after(()=>archive.close?.());
+  const first=await query.reviewedTimelinePage({...scope,topic:'T'});assert.equal(first.rows.length,20);assert(first.nextCursor);
+  const last=await query.reviewedTimelinePage({...scope,topic:'T',cursor:first.nextCursor});assert.equal(last.rows.length,3);assert.equal(last.nextCursor,null);
+  assert.deepEqual([...first.rows,...last.rows],await query.reviewedTimeline({...scope,topic:'T'}));
+  await assert.rejects(query.reviewedTimelinePage({...scope,topic:'X',cursor:first.nextCursor}),/invalid reviewed timeline cursor/);
+  await assert.rejects(query.reviewedTimelinePage({...scope,topic:'T',from:'2025-01-01',cursor:first.nextCursor}),/invalid reviewed timeline cursor/);
+  await assert.rejects(query.reviewedTimelinePage({...scope}),/topic required/);
+  await assert.rejects(query.reviewedTimelinePage({...scope,topic:'T',limit:51}),/invalid reviewed timeline limit/);
+  await assert.rejects(query.reviewedTimelinePage({...scope,topic:'T',cursor:'broken'}),/invalid reviewed timeline cursor/);
+  const ref=first.rows[0].citation;
+  await archive.addAnnotation({scope,id:'note-'+backend,kind:'annotation',text:'new note',target:ref});
+  await assert.rejects(query.reviewedTimelinePage({...scope,topic:'T',cursor:first.nextCursor}),/reviewed timeline cursor is stale/);
+ }
+});

@@ -8,7 +8,7 @@ const { randomUUID } = require('node:crypto');
 const options = Object.fromEntries([
   'dir', 'owner', 'project', 'keyword', 'from', 'to', 'limit', 'id', 'revision',
   'source', 'file', 'instance', 'session', 'max-records', 'batch-size', 'port',
-  'kind', 'text', 'manifest', 'target', 'evidence', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time', 'serve-origin', 'serve-tailnet-user'
+  'kind', 'text', 'manifest', 'target', 'evidence', 'task-root', 'parents', 'state', 'evidence-kind', 'occurred-at', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time', 'serve-origin', 'serve-tailnet-user'
 ].map(name => [name, { type: 'string' }]));
 options.recent = { type: 'boolean' };
 options['local-draft'] = { type: 'boolean' };
@@ -33,6 +33,7 @@ Commands:
   annotate --target CITATION_JSON --kind note|correction|decision|change|todo --text TEXT [--id RETRY_ID] [--evidence CITATION_JSON]
   watch --manifest PRIVATE_JSON [--interval SECONDS] [--runs N]
   semantic-status
+  task-list --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT
   draft-list --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT
   draft-show --dir PRIVATE_DIRECTORY --owner OWNER --project PROJECT --id CANDIDATE_ID
   daily [--manifest PRIVATE_JSON] [--local-draft]
@@ -113,7 +114,7 @@ async function main() {
   }
   if (values.preview && command !== 'find') throw new Error('--preview is supported only by local find.');
   const { operations } = require('../lib/operations.cjs');
-  const readCommands = ['find', 'timeline', 'current', 'evidence', 'coverage', 'verify-original', 'semantic-status'];
+  const readCommands = ['find', 'timeline', 'current', 'evidence', 'coverage', 'verify-original', 'semantic-status', 'task-list'];
   const readOnly = readCommands.includes(command) || (command === 'mcp' && !values['allow-annotations']);
   const op = await operations({ ...values, readOnly });
   const selection = { ...values, limit: positiveInt(values.limit, 100), offset: positiveInt(values.offset, 10000), harness: values.source };
@@ -125,6 +126,7 @@ async function main() {
     case 'ingest-tree': result = await ingestTree(op, values); break;
     case 'find': result = await op.find(selection); if (values.preview) result = await require('../lib/find-preview.cjs').addFindPreviews(op.archive, op.scope, selection, result); break;
     case 'timeline': result = await op.timeline(selection); break;
+    case 'task-list': result = await op.taskList(selection); break;
     case 'current': result = await op.current(selection); break;
     case 'evidence': result = await op.evidence(selection); break;
     case 'verify-original': {
@@ -152,6 +154,11 @@ async function main() {
       const fields = Object.fromEntries(['topic', 'basis', 'lifecycle'].filter(key => values[key] !== undefined).map(key => [key, values[key]]));
       if (values.revises) fields.revises = values.revises;
       if (values.evidence !== undefined) fields.evidence = JSON.parse(values.evidence);
+      if(values['task-root']!==undefined)fields.taskRoot=JSON.parse(values['task-root']);
+      if(values.parents!==undefined)fields.parents=JSON.parse(values.parents);
+      if(values.state!==undefined)fields.state=values.state;
+      if(values['evidence-kind']!==undefined)fields.evidenceKind=values['evidence-kind'];
+      if(values['occurred-at']!==undefined)fields.occurredAt=values['occurred-at'];
       if (values['valid-time']) fields.valid_time = values['valid-time'];
       result = await op.annotate({ ...fields, target: JSON.parse(values.target), kind: values.kind, text: values.text, id: values.id || randomUUID() });
       break;

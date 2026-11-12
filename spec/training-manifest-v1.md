@@ -31,3 +31,16 @@ node bin/memory.cjs training-manifest --synthetic --split test > training-split-
 样本的 `input` 包含问题和同版证据片段，`expected` 包含答案、标签及已知时间。`evidenceRegistry` 按精确引用记录来源摘要、用途、授权标识和已知的共同会话沿革。运行留出评测时，模型输入使用 `input`，答案判定使用 `expected`。
 
 公开合成文件可分别交给训练和评测流程的后续验证。实际训练和模型评测需要独立验收。
+
+## 离线评测回放
+
+```sh
+node bin/memory.cjs training-eval-requests --synthetic > evaluation-requests.json
+node bin/memory.cjs training-eval-score --synthetic < predictions.json
+```
+
+两个入口各自重建固定公开留出分区。请求文件的 `requests[].input` 仅包含问题和同版证据。调用方保留请求 `id` 和整批 `contentHash`，提供给模型的是 `input`。输入生成和评分命令都在本机运行。
+
+评分从标准输入读取至多 1 MiB UTF-8 JSON。顶层包含 `version`、`requestsHash` 和 `responses`。`version` 使用 `training-eval-predictions-v1`，`requestsHash` 取请求文件的 `contentHash`。每条响应包含样本 `id`、答案字符串 `answer` 和精确引用数组 `evidence`。摘要不符、未知或重复样本会拒绝评分。
+
+评分分别统计与预期文本完全一致的答案、引用均属于该请求且引用非空的响应，以及缺失的样本。回执含样本标识和结果布尔值。语义等价和引用是否足以支持答案仍需独立评测。

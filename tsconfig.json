@@ -35,6 +35,7 @@
     "src/reviewed-page.cts",
     "src/training-manifest.cts",
     "src/synthetic-training-manifest.cts",
-    "src/training-split.cts"
+    "src/training-split.cts",
+    "src/training-evaluation.cts"
   ]
 }

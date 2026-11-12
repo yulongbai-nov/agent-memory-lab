@@ -27,6 +27,7 @@ Commands:
   current --topic TOPIC
   evidence --id ID --revision VERSION --source dsh|codex --instance INSTANCE --session SESSION
   verify-original --id ID --revision VERSION
+  repair-original --manifest PRIVATE_JSON --id ID --revision VERSION
   coverage
   migrate-index
   export-index
@@ -142,6 +143,13 @@ async function main() {
   let result;
   switch (command) {
     case 'ingest': result = await ingest(op, values); break;
+    case 'repair-original': {
+      if (!values.manifest || !values.id || !values.revision) throw Error('Provide manifest, id, and revision');
+      const file = await readFile(values.manifest);
+      if (file.length > 1024 * 1024) throw Error('Manifest exceeds size limit');
+      result = await require('../lib/repair-original.cjs').repairOriginal(op, JSON.parse(file), values.id, values.revision);
+      break;
+    }
     case 'ingest-tree': result = await ingestTree(op, values); break;
     case 'find': result = await op.find(selection); if (values.preview) result = await require('../lib/find-preview.cjs').addFindPreviews(op.archive, op.scope, selection, result); break;
     case 'timeline': result = await op.timeline(selection); break;

@@ -30,6 +30,7 @@
     "src/legacy-input-binding.cts",
     "src/query-time.cts",
     "src/graph-wiki-view.cts",
-    "src/graph-wiki-browser.cts"
+    "src/graph-wiki-browser.cts",
+    "src/repair-original.cts"
   ]
 }

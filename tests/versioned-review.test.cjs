@@ -207,6 +207,7 @@ test("versioned candidates publish and explicit decision/todo reviews retain lin
   const snapshot = published.output.snapshot;
   const list = f.cmd(["draft-list", "--format", "v2"]).output;
   assert.equal(list.status, "ready");
+  assert.equal(list.generatedAt, "2026-01-01T00:00:00Z");
   assert.equal(list.candidates[0].basis, "uncertain");
   const show = f.cmd([
     "draft-show",
@@ -216,6 +217,7 @@ test("versioned candidates publish and explicit decision/todo reviews retain lin
     snapshot + ":1",
   ]).output;
   assert.equal(show.candidate.evidence[0].quoteStatus, "verified-original");
+  assert.equal(show.generatedAt, "2026-01-01T00:00:00Z");
   const decision = f.cmd([
     "draft-review",
     "--id",

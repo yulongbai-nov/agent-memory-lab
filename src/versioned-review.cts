@@ -475,6 +475,10 @@ async function readV2(options: {
         snapshot: id,
         producer: snapshot.producer,
         producerStatus: "reported",
+        generatedAt: snapshot.generatedAt,
+        ...(snapshot.originReceiptSha256
+          ? { originReceiptSha256: snapshot.originReceiptSha256 }
+          : {}),
         admission: snapshot.admission,
         candidate: {
           id: options.id,
@@ -493,6 +497,10 @@ async function readV2(options: {
       snapshot: id,
       producer: snapshot.producer,
       producerStatus: "reported",
+      generatedAt: snapshot.generatedAt,
+      ...(snapshot.originReceiptSha256
+        ? { originReceiptSha256: snapshot.originReceiptSha256 }
+        : {}),
       admission: snapshot.admission,
       candidates: snapshot.candidates.map((c, i) => ({
         id: id + ":" + (i + 1),

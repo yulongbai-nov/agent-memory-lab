@@ -42,6 +42,17 @@ export function compareBound(value: unknown, bound: string): number | null {
     return null;
   return compareTime(value, bound);
 }
+export function reviewedTimeKey(value: unknown): string {
+  const instant = sourceInstant(value);
+  if (instant === null) return "1";
+  // Four-digit years, including offsets around year zero, fit in this
+  // positive range. Fixed widths preserve the exact order under SQLite BINARY.
+  const milliseconds = String(instant.ms + 100_000_000_000_000).padStart(
+    15,
+    "0",
+  );
+  return "0" + milliseconds + instant.tail.padEnd(6, "0");
+}
 type Filters = {
   from?: string | undefined;
   to?: string | undefined;

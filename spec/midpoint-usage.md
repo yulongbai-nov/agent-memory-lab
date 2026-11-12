@@ -41,14 +41,17 @@ node bin/memory.cjs serve --project work --port 8787
 
 网页或 CLI 可以明确复核决定、变更和待办，也可以批注纠正。证据使用来源、条目 ID 和归档版本组合。变更引用前一条审核的编号；纠正必须引用确切解释的审核编号，保存即生效，拒绝另填生效时间。后来另有原始消息作为依据时，在 CLI 的 `annotate --kind correction` 同时传入旧 `--target`、`--revises` 审核编号和新 `--evidence` 精确引用。MCP 对应字段为 `target`、`revises` 和 `evidence`。查询保留旧 `citation`，有新证据时另返回 `effectiveCitation`。各同步端须先升级再传输含新字段的纠正。将来的决定或变更可单独指定生效时间。审核内容独立追加，保留原文和时间线。还没复核的原文可以搜索和查证，决定状态和下一步需要明确复核。话题有多个矛盾的决定时会标为待核实。
 
-在支持 stdio MCP 的宿主可注册 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认提供五个查询工具，启用 `--allow-annotations` 后可追加批注。合成演示绑定只查询合成档案。[共用 Skill](../skills/agent-memory/SKILL.md) 说明如何核对私有 MCP 绑定或使用本机固定范围只读入口。该入口支持显式预览和最新批次草稿读取时，可直接使用下列命令：
+在支持 stdio MCP 的宿主可注册 `node <repo>/bin/memory.cjs mcp --project work --dir <private-dir>`。默认提供五个查询工具，启用 `--allow-annotations` 后可追加批注。合成演示绑定只查询合成档案。[共用 Skill](../skills/agent-memory/SKILL.md) 说明如何核对私有 MCP 绑定或使用本机固定范围只读入口。该入口支持显式预览、分页待办和最新批次草稿读取时，可直接使用下列命令：
 
 ```sh
 launcher="$HOME/.local/share/agent-memory-lab/memory-private.sh"
 "$launcher" find --preview --keyword="$keyword" --limit 5
+"$launcher" task-list --limit 20 --offset 0
 "$launcher" draft-list
 "$launcher" draft-show --id="$candidate_id"
 ```
+
+`task-list` 每页默认 20 项，上限 50，返回 `coverage` 供分页。当前状态通过现有 `timeline` 及精确证据回溯。原任务的完成与取消不列在待办页。默认 MCP 保持五个查询工具，时间线可显示任务状态。详见[任务状态契约](task-state-observations.md)。
 
 固定范围入口由可信的本机配置绑定，不传入范围覆盖参数。使用前核对当前宿主和模型是否获准接收该范围的工具输出。默认 MCP 不注册预览或草稿工具。使用共享链接时，两端可指向同一份 Skill 文件；进程是否加载新版需在各自会话核实。
 

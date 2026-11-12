@@ -284,7 +284,7 @@ test("incomplete scans retain tracked work and report queue capacity overflow", 
   const result = await collectChanged(op, input, ingest);
   if (!result.inaccessible)
     return t.skip("filesystem permits reading a mode-000 directory");
-  assert.equal(result.queueOverflow, 1);
+  assert.equal(result.queueOverflow, 2);
   assert.equal(result.sessionsAttempted, 0);
   const saved = JSON.parse(await fs.readFile(stateFile, "utf8"));
   assert.equal(Object.keys(saved.entries).length, 20000);

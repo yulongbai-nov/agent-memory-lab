@@ -342,16 +342,20 @@ async function collectChanged(
     // identities first when reconciling a union that exceeds the capacity.
     const admitted = new Set(Object.keys(establishedState.entries));
     const queue: string[] = [];
+    let queueOverflow = 0;
     for (const id of establishedState.pendingQueue || []) {
       const entry = visible.get(id);
       if ((!entry && complete) || (entry && !eligible(entry))) continue;
-      if (!admitted.has(id) && admitted.size >= MAX_TRACKED_IDENTITIES)
+      if (!admitted.has(id) && admitted.size >= MAX_TRACKED_IDENTITIES) {
+        // Visible entries are counted below. Also account for a queue-only
+        // identity displaced during an incomplete scan after rollback.
+        if (!entry) queueOverflow++;
         continue;
+      }
       admitted.add(id);
       queue.push(id);
     }
     const queued = new Set(queue);
-    let queueOverflow = 0;
     for (const entry of pending) {
       if (queued.has(entry.id)) continue;
       if (!admitted.has(entry.id) && admitted.size >= MAX_TRACKED_IDENTITIES) {

@@ -5,7 +5,7 @@
 ## 开始一项工作
 
 1. 检查工作区、分支、远端和未提交改动，保留其他任务的现场。实现和实验使用独立分支或 worktree，不直接在 `main` 上试改。
-2. 先看[路线图](spec/roadmap.md)和[工程边界](spec/engineering-quality.md)，再按下表读取相关规格与入口。先确认范围、依赖和验收，再深入实现；不要求每次扫描所有文档。
+2. 先看[当前完成计划](plan.md)、[路线图](spec/roadmap.md)和[工程边界](spec/engineering-quality.md)，再按下表读取相关规格与入口。先确认范围、依赖和验收，再深入实现；不要求每次扫描所有文档。
 3. 查找现有实现与可复用组件。数据校验和业务规则尽量共用，避免 CLI、MCP、网页及同步各复制一套规则。
 4. 行为或格式发生变化时同步更新规格、使用说明和对应验证。未实现的设想明确标为提案，不写成已有能力。
 
@@ -13,7 +13,7 @@
 
 | 要处理的事情 | 主要代码 | 规格或说明 |
 | --- | --- | --- |
-| 产品目标、边界与设计取舍 | 按下列模块定位 | [路线图](spec/roadmap.md)、[数据契约](spec/contract-v0.1.md)、[设计决定](spec/design-decisions.md) |
+| 产品目标、边界与设计取舍 | 按下列模块定位 | [完成计划](plan.md)、[规格目录](spec/README.md)、[路线图](spec/roadmap.md)、[数据契约](spec/contract-v0.1.md)、[设计决定](spec/design-decisions.md) |
 | CLI、MCP、网页与作用域 | [CLI](bin/memory.cjs)、[共用操作](lib/operations.cjs)、[MCP](lib/mcp.cjs)、[网页](lib/web/server.cjs) | [使用手册](spec/midpoint-usage.md)、[跨 Harness 接入](spec/DSH-Codex-integration-v0.1.md) |
 | 原生会话导入、发现与增量采集 | [适配器](lib/adapters/)、[摄取](lib/intake.cjs)、[收集器](src/collector.cts)、[检查点](lib/checkpoint.cjs)、[Codex 发现](lib/codex-discovery.cjs) | [接入设计](spec/DSH-Codex-integration-v0.1.md)、[ChatGPT 快照](spec/chatgpt-snapshot-v1.md) |
 | 原件、归档、事务与同步 | [归档 API](lib/archive.cjs)、[原件](lib/originals.cjs)、[JSON 存储](lib/storage.cjs)、[SQLite](lib/storage-sqlite.cjs)、[锁](lib/lock.cjs)、[CouchDB](lib/storage-couch.cjs) | [数据契约](spec/contract-v0.1.md)、[本机索引 ADR](spec/adr-local-sqlite-index.md)、[同步实验](benchmark/couchdb-sync/README.md) |

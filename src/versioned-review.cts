@@ -332,19 +332,6 @@ async function evidenceDetails(
   }
   return details;
 }
-async function verify(
-  archive: Archive,
-  scope: Scope,
-  candidates: Candidate[],
-  inputs: Projection[],
-) {
-  for (const candidate of candidates) {
-    const details = await evidenceDetails(archive, scope, candidate, inputs);
-    if (details.some((e) => e.quoteStatus !== "verified-original"))
-      throw Error("Evidence verification failed");
-  }
-}
-
 async function verifiedInputs(
   archive: Archive,
   scope: Scope,
@@ -424,12 +411,16 @@ async function publish(options: {
   const archive = await openArchive({ dir: options.dir, readOnly: true });
   try {
     return await withWriterLock(archive.dir, "draft-v2:" + key, async () => {
-      await verify(
-        archive,
-        scope,
-        receipt.candidates,
-        receipt.inputProjections,
-      );
+      const verified: Projection[] = [];
+      for (const candidate of receipt.candidates)
+        for (const input of await verifiedInputs(
+          archive,
+          scope,
+          candidate,
+          receipt.inputProjections,
+        ))
+          if (!verified.some((x) => canonical(x) === canonical(input)))
+            verified.push(input);
       const p = await paths(archive, scope, true);
       const snapshot: Snapshot = {
         formatVersion: 2,
@@ -443,7 +434,7 @@ async function publish(options: {
           kind: "operator-import",
           receiptSha256: options.receiptSha256,
         },
-        inputProjections: receipt.inputProjections,
+        inputProjections: verified,
         candidates: receipt.candidates,
       };
       validateSnapshot(snapshot);

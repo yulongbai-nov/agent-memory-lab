@@ -421,6 +421,31 @@ test("versioned candidates publish and explicit decision/todo reviews retain lin
   );
   assert.notEqual(invalid.status, 0);
   assert.equal(invalid.stdout, "");
+  const changed = JSON.parse(saved);
+  changed.scope.owner = "different-owner";
+  const otherDb = new DatabaseSync(join(f.dir, "archive.sqlite3"));
+  otherDb
+    .prepare("UPDATE annotations SET data=? WHERE identity=?")
+    .run(JSON.stringify(changed), identity);
+  otherDb.close();
+  const foreign = spawnSync(
+    process.execPath,
+    [
+      join(__dirname, "../bin/memory.cjs"),
+      "draft-review-show",
+      "--dir",
+      f.dir,
+      "--owner",
+      scope.owner,
+      "--project",
+      scope.project,
+      "--review-id",
+      decision.output.id,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.notEqual(foreign.status, 0);
+  assert.equal(foreign.stdout, "");
 });
 
 test("versioned declared full projection accepts long repeated source text by exact offsets", async (t) => {
@@ -673,4 +698,44 @@ test("SQLite evidence lookup preserves explicit nonmessage type for v2 gate pari
   } finally {
     archive.close?.();
   }
+});
+
+test("empty candidate receipt drops unused input projections", async (t) => {
+  const f = await fixture(t),
+    draft = await f.makeDraft(),
+    receipt = {
+      formatVersion: 2,
+      scope,
+      producer: {
+        writerProtocol: "generic",
+        recipeIdentity: "e".repeat(64),
+        outputProtocol: "candidate-v2",
+      },
+      generatedAt: null,
+      inputProjections: draft.inputProjections,
+      candidates: [],
+    },
+    bytes = Buffer.from(JSON.stringify(receipt)),
+    file = join(f.dir, "empty.json");
+  await fs.writeFile(file, bytes, { mode: 0o600 });
+  const published = f.cmd([
+    "draft-publish",
+    "--receipt",
+    file,
+    "--receipt-sha256",
+    sha(bytes),
+    "--expect-latest",
+    "none",
+  ]).output;
+  assert.equal(f.cmd(["draft-list", "--format", "v2"]).output.status, "empty");
+  const snapshotFile = join(
+      f.dir,
+      "local-derive",
+      "draft-v2",
+      sha(JSON.stringify([scope.owner, scope.project])),
+      "snapshots",
+      published.snapshot + ".json",
+    ),
+    snapshot = JSON.parse(await fs.readFile(snapshotFile, "utf8"));
+  assert.deepEqual(snapshot.inputProjections, []);
 });

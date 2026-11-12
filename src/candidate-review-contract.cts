@@ -203,7 +203,11 @@ function saneMetadata(producerValue: Producer, at: string | null) {
     (at === null || compareBound(at, at) !== null)
   );
 }
-function checkReferences(candidates: Candidate[], inputs: Projection[]) {
+function checkReferences(
+  candidates: Candidate[],
+  inputs: Projection[],
+  onlyReferenced = false,
+) {
   const candidatesSeen = new Set<string>();
   for (const c of candidates) {
     const key = JSON.stringify([c.kind, c.claim]);
@@ -217,6 +221,7 @@ function checkReferences(candidates: Candidate[], inputs: Projection[]) {
     }
   }
   if (
+    onlyReferenced &&
     inputs.some(
       (p) =>
         !candidates.some((c) =>
@@ -258,7 +263,7 @@ function validateSnapshot(value: unknown): Snapshot {
   if (!checkSnapshot(value)) throw Error("Invalid candidate snapshot");
   const s = value as Snapshot;
   if (!saneMetadata(s.producer, s.generatedAt)) throw Error("Invalid producer");
-  checkReferences(s.candidates, s.inputProjections);
+  checkReferences(s.candidates, s.inputProjections, true);
   return s;
 }
 function validateCapsule(value: unknown): Capsule {
@@ -272,7 +277,7 @@ function validateCapsule(value: unknown): Capsule {
     c.candidateSha256 !== hash(canonical(c.candidate))
   )
     throw Error("Invalid candidate review");
-  checkReferences([c.candidate], c.inputProjections);
+  checkReferences([c.candidate], c.inputProjections, true);
   if (
     c.inputProjections.some(
       (p) =>

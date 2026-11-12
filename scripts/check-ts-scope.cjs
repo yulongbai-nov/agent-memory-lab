@@ -73,6 +73,7 @@ const lintedJavaScript = [
   "tests/nocache-hash.test.cjs",
   "tests/local-run-integrity.test.cjs",
   "tests/local-derive-recovery.test.cjs",
+  "tests/daily-scan-synthetic.test.cjs",
   "tests/local-draft-read.test.cjs",
 ];
 const files = execFileSync(

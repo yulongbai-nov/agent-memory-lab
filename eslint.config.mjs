@@ -80,6 +80,7 @@ export default defineConfig([
       "tests/nocache-hash.test.cjs",
       "tests/local-run-integrity.test.cjs",
       "tests/local-derive-recovery.test.cjs",
+      "tests/daily-scan-synthetic.test.cjs",
       "tests/local-draft-read.test.cjs",
     ],
     extends: [js.configs.recommended],

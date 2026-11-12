@@ -241,3 +241,84 @@ test("MCP task evidence is whole, bounded across rows and reports omissions", ()
   assert.ok(total <= 4096);
   assert.equal(JSON.stringify(out).includes("must not leak"), false);
 });
+
+test("task selection and exact notes agree across JSON and SQLite", async (t) => {
+  const { migrateJsonToSqlite } = require("../lib/storage-sqlite.cjs");
+  for (const backend of ["json", "sqlite"]) {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "task-select-"));
+    t.after(() => fs.rm(dir, { recursive: true, force: true }));
+    const scope = { owner: "synthetic", project: backend };
+    const source = { harness: "dsh", instance: "test", session: "one" };
+    let archive = await openArchive({ dir });
+    await archive.importBatch({
+      scope,
+      source,
+      checkpoint: { position: 1 },
+      items: [
+        {
+          id: "legacy",
+          kind: "message",
+          role: "user",
+          text: "legacy",
+          metadata: { reviewed: true, kind: "todo", next_step: "do legacy" },
+        },
+        {
+          id: "target",
+          kind: "message",
+          role: "user",
+          text: "PRIVATE RAW TARGET",
+        },
+        { id: "unrelated", kind: "message", role: "user", text: "unrelated" },
+      ],
+    });
+    const item = await archive.getItem({ ...scope, id: "target" });
+    const target = { id: "target", revision: item.versionId, source };
+    await archive.addAnnotation({
+      id: "todo",
+      scope,
+      kind: "todo",
+      text: "annotated task",
+      target,
+    });
+    await archive.addAnnotation({
+      id: "note",
+      scope,
+      kind: "annotation",
+      text: "specific note",
+      target,
+    });
+    archive.close?.();
+    if (backend === "sqlite") await migrateJsonToSqlite({ dir });
+    archive = await openArchive({ dir });
+    const query = createQuery(archive);
+    const selected = await archive.listItems(scope, { taskOnly: true });
+    if (backend === "sqlite") {
+      assert.equal(selected.length, 2);
+      assert.equal(
+        selected.find((r) => r.item.id === "target").item.text,
+        undefined,
+      );
+    }
+    const tasks = (await query.taskList(scope)).tasks;
+    assert.deepEqual(tasks.map((x) => x.text).sort(), [
+      "annotated task",
+      "legacy",
+    ]);
+    assert.deepEqual(
+      tasks.find((x) => x.text === "annotated task").target,
+      target,
+    );
+    assert.deepEqual(
+      (await query.annotations({ ...scope, target })).map((a) => a.id),
+      ["todo", "note"],
+    );
+    await assert.rejects(
+      query.annotations({
+        ...scope,
+        target: { ...target, source: { ...source, session: "wrong" } },
+      }),
+      /not found/,
+    );
+    archive.close?.();
+  }
+});

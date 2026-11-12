@@ -207,11 +207,39 @@ async function showGraph(
     if (row) void openEvidence(row.citation).catch(onError);
   });
 }
-async function projectOverview(): Promise<void> {
+function exactCitation(value: unknown): Citation | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const c = value as Record<string, unknown>;
+  if (!c.source || typeof c.source !== "object" || Array.isArray(c.source))
+    return;
+  const source = c.source as Record<string, unknown>;
+  if (
+    ![c.id, c.revision, source.harness, source.instance, source.session].every(
+      (part) => typeof part === "string" && part.trim(),
+    )
+  )
+    return;
+  return {
+    id: c.id as string,
+    revision: c.revision as string,
+    source: {
+      harness: source.harness as string,
+      instance: source.instance as string,
+      session: source.session as string,
+    },
+  };
+}
+let overviewGeneration = 0;
+async function projectOverview(
+  openEvidence: (citation: Citation) => Promise<void>,
+  onError: (error: unknown) => void,
+): Promise<void> {
+  const generation = ++overviewGeneration;
   const [rawDecisions, rawTasks] = await Promise.all([
     request("/api/current"),
     request("/api/tasks"),
   ]);
+  if (generation !== overviewGeneration) return;
   if (!Array.isArray(rawDecisions)) throw new Error("Invalid decisions");
   const tasks = record(rawTasks).tasks;
   if (!Array.isArray(tasks)) throw new Error("Invalid tasks");
@@ -226,17 +254,52 @@ async function projectOverview(): Promise<void> {
       .filter((v) => typeof v === "string")
       .join(" · ");
     d.append(p);
+    const citation = exactCitation(row.effectiveCitation || row.citation);
+    if (citation) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "查看决定证据";
+      button.setAttribute(
+        "aria-label",
+        `查看决定证据：${String(row.topic || row.text || "当前决定")}`,
+      );
+      button.onclick = () => void openEvidence(citation).catch(onError);
+      d.append(button);
+    }
   }
   for (const raw of tasks as unknown[]) {
     const row = record(raw),
       p = document.createElement("p");
-    p.textContent = ["未完任务", row.text, row.state]
+    p.textContent = [
+      row.text,
+      typeof row.label === "string"
+        ? `状态：${row.label}`
+        : `状态：${String(row.state || "未知")}`,
+      typeof row.next_step === "string" && row.next_step
+        ? `下一步：${row.next_step}`
+        : "下一步：未提供",
+    ]
       .filter((v) => typeof v === "string")
       .join(" · ");
     t.append(p);
+    const citation = exactCitation(row.target);
+    if (citation) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "查看任务证据";
+      button.setAttribute(
+        "aria-label",
+        `查看任务证据：${String(row.text || "未完任务")}`,
+      );
+      button.onclick = () => void openEvidence(citation).catch(onError);
+      t.append(button);
+    }
   }
 }
-function setup(onError: (error: unknown) => void): void {
+function setup(
+  onError: (error: unknown) => void,
+  openEvidence: (citation: Citation) => Promise<void>,
+): void {
   for (const [id, label] of [
     ["project-entry", "项目工作页"],
     ["topic-entry", "知识主题页"],
@@ -246,10 +309,10 @@ function setup(onError: (error: unknown) => void): void {
       element("#entry-label").textContent = label;
       element("#project-overview").hidden = !project;
       element("#topic-intro").hidden = project;
-      if (project) void projectOverview().catch(onError);
+      if (project) void projectOverview(openEvidence, onError).catch(onError);
       else element("#search input").focus();
     };
-  void projectOverview().catch(onError);
+  void projectOverview(openEvidence, onError).catch(onError);
 }
 (
   globalThis as typeof globalThis & {

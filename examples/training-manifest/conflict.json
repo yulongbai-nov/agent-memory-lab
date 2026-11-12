@@ -1,0 +1,56 @@
+{
+  "cases": [
+    {
+      "scope": { "owner": "synthetic-user", "project": "conflict-demo" },
+      "source": {
+        "harness": "synthetic-harness",
+        "instance": "fixture",
+        "session": "conflict-session",
+        "source_version": "v1"
+      },
+      "messages": [
+        {
+          "id": "conflict-a",
+          "text": "The launch is approved for Monday.",
+          "valid_time": "2026-02-01T10:00:00.000Z"
+        },
+        {
+          "id": "conflict-b",
+          "text": "The launch is approved for Tuesday.",
+          "valid_time": "2026-02-01T10:00:00.000Z"
+        }
+      ],
+      "relationship": {
+        "kind": "unresolved-conflict",
+        "heads": ["conflict-a", "conflict-b"],
+        "resolution": null
+      }
+    },
+    {
+      "scope": { "owner": "synthetic-user", "project": "heldout-conflict" },
+      "source": {
+        "harness": "synthetic-harness",
+        "instance": "fixture",
+        "session": "heldout-conflict-session",
+        "source_version": "v1"
+      },
+      "messages": [
+        {
+          "id": "heldout-a",
+          "text": "The workshop location is confirmed as the library.",
+          "valid_time": "2026-03-01T10:00:00.000Z"
+        },
+        {
+          "id": "heldout-b",
+          "text": "The workshop location is confirmed as the museum.",
+          "valid_time": "2026-03-01T10:00:00.000Z"
+        }
+      ],
+      "relationship": {
+        "kind": "unresolved-conflict",
+        "heads": ["heldout-a", "heldout-b"],
+        "resolution": null
+      }
+    }
+  ]
+}

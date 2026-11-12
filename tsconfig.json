@@ -32,6 +32,8 @@
     "src/graph-wiki-view.cts",
     "src/graph-wiki-browser.cts",
     "src/repair-original.cts",
-    "src/reviewed-page.cts"
+    "src/reviewed-page.cts",
+    "src/training-manifest.cts",
+    "src/synthetic-training-manifest.cts"
   ]
 }

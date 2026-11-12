@@ -129,4 +129,11 @@ test('sync rejects a newly received non-independent correction but permits repla
  await assert.rejects(b.sync(config),/not independent/);
  assert.deepEqual(await b.listAnnotations(scope),[]);
  assert.deepEqual(await b.listItems(scope),[]);
+ const duplicate = docs.find(doc => doc.payload.record.id === 'c');
+ docs.push(duplicate); docs.sort((x,y) => x._id.localeCompare(y._id));
+ await assert.rejects(b.sync(config),/not independent/);
+ assert.deepEqual(await b.listAnnotations(scope),[]);
+ assert.deepEqual(await b.listItems(scope),[]);
+ assert.equal((await a.sync(config)).pulled,0);
+ assert.deepEqual((await a.listAnnotations(scope)).find(row => row.id === 'c'),legacy);
 });

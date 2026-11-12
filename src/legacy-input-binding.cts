@@ -34,6 +34,9 @@ export function corroboratesLastUserTurn(
   let role: string | null = null;
   let turn: string[] = [];
   for (const line of lines) {
+    // Fenced or quoted role-like text cannot safely establish a turn boundary.
+    if (/```|~~~/u.test(line) || /^(?:\s+|\s*>\s*)[A-Za-z][\w-]*:/u.test(line))
+      return false;
     const marker = /^(user|assistant|system|developer|tool):(?:[ \t]|$)/u.exec(
       line,
     );

@@ -548,3 +548,27 @@ test("review capsule includes only the chosen candidate projection for a shared 
     archive.close?.();
   }
 });
+
+test("declared preview does not expose tool or turn-event text", () => {
+  const {
+      previewDeclaredProjection,
+    } = require("../lib/local-derive-projection.cjs"),
+    p = { kind: "full", previewStartUtf16: 0, previewEndUtf16: 4 },
+    source = { harness: "dsh" },
+    safe = {
+      source,
+      item: {
+        kind: "message",
+        role: "user",
+        text: "safe",
+        metadata: { recordType: "user/message" },
+      },
+    };
+  assert.equal(previewDeclaredProjection(safe, p), "safe");
+  for (const item of [
+    { ...safe.item, kind: "event" },
+    { ...safe.item, role: "tool" },
+    { ...safe.item, metadata: { recordType: "turn/end" } },
+  ])
+    assert.equal(previewDeclaredProjection({ source, item }, p), null);
+});

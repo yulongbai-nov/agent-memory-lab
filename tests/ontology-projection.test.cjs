@@ -509,9 +509,21 @@ test("inactive revisions without times stay structural and manual corrections do
   assert.equal(current.decision.originalEvidence.revision, "v-root");
   assert.equal(current.decision.effectiveEvidence, null);
   rows[3].evidence = reference("root");
-  await assert.rejects(
-    rebuildProjection({ archive, scope, asOf, dependencies: [] }),
-    /not independent/,
+  const legacy = await rebuildProjection({
+    archive,
+    scope,
+    asOf,
+    dependencies: [],
+  });
+  assert.equal(legacy.corrections[0].invalidEvidence.revision, "v-root");
+  assert.equal(legacy.corrections[0].evidence, null);
+  assert.equal(
+    answerDependency({
+      projection: legacy,
+      decisionRootId: "decision",
+      mode: "current-known",
+    }).status,
+    "ambiguous",
   );
 });
 test("dependency effective time and historical knowledge remain separate", async () => {

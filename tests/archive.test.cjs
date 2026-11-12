@@ -76,6 +76,10 @@ test('review links bind correction to exact evidence and reject invalid changes'
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'correction',text:'fix',target:other,revises:'d'}),/evidence mismatch/);
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'change',text:'fix',target:other,revises:'d',topic:'different'}),/topic mismatch/);
  await assert.rejects(a.addAnnotation({scope,id:'future',kind:'correction',text:'fix',target,revises:'d',valid_time:'2030-01-01T12:00:00Z'}),/effect immediately/);
+ for (const [tgt,evidence] of [[target,target],[{...target,source},target],[target,{...target,source}]]) {
+   await assert.rejects(a.addAnnotation({scope,id:'duplicate',kind:'correction',text:'fix',target:tgt,revises:'d',evidence}),/not independent/);
+ }
+ await a.addAnnotation({scope,id:'independent',kind:'correction',text:'fix',target,revises:'d',evidence:other});
  await a.addAnnotation({scope,id:'c',kind:'correction',text:'fix',target,revises:'d'});
  await a.addAnnotation({scope,id:'next',kind:'change',text:'changed',target:other,revises:'d',topic:'T'});
  await assert.rejects(a.addAnnotation({scope,id:'bad',kind:'change',text:'fix',target,revises:'c'}),/invalid/);
@@ -98,4 +102,31 @@ test('same-position coverage CAS rejects an older overlapping scan', async t => 
     scope, source: {...source, coverage: {gaps: ['prior', 'stale']}}, checkpoint, items: []
   }), /Checkpoint revision conflict/);
   assert.deepEqual((await archive.getCheckpoint({...scope, ...source})).source.coverage.gaps, []);
+});
+
+test('sync rejects a newly received non-independent correction but permits replay of a legacy record', async t => {
+ const {digest} = require('../lib/storage.cjs');
+ const root = await fs.mkdtemp(path.join(os.tmpdir(),'correction-sync-')); t.after(() => fs.rm(root,{recursive:true,force:true}));
+ const dir = path.join(root,'legacy'), a = await openArchive({dir}), b = await openArchive({dir:path.join(root,'fresh')});
+ const scope = {owner:'o',project:'p'}, source = {harness:'h',instance:'i',session:'s'};
+ await a.importBatch({scope,source,checkpoint:{position:1},items:[{id:'m',kind:'message',text:'original'}]});
+ const record = await a.getItem({...scope,id:'m'}), target = {id:'m',revision:record.versionId};
+ const decision = {scope,id:'d',kind:'decision',text:'decision',target};
+ await a.addAnnotation(decision);
+ const legacy = {scope,id:'c',kind:'correction',text:'fix',target,revises:'d',evidence:target};
+ const file = path.join(dir,'archive.json'), state = JSON.parse(await fs.readFile(file,'utf8'));
+ state.annotations[JSON.stringify([scope.owner,scope.project,legacy.id])] = legacy;
+ await fs.writeFile(file,JSON.stringify(state));
+ const payloads = [{kind:'version',record},{kind:'annotation',record:decision},{kind:'annotation',record:legacy}];
+ const docs = payloads.map(payload => ({_id:`immutable:${digest(payload)}`,type:'immutable',payload})).sort((x,y) => x._id.localeCompare(y._id));
+ const fetchImpl = async (url,opts={}) => {
+   if (new URL(url).pathname.endsWith('/_all_docs')) return {status:200,ok:true,json:async()=>({rows:docs.map(doc=>({id:doc._id,doc}))})};
+   if (opts.method === 'PUT') return {status:201,ok:true};
+   throw new Error('unexpected request');
+ };
+ const config = {...scope,url:'http://localhost:5984/archive',fetchImpl,mode:'pull'};
+ assert.equal((await a.sync(config)).pulled,0);
+ await assert.rejects(b.sync(config),/not independent/);
+ assert.deepEqual(await b.listAnnotations(scope),[]);
+ assert.deepEqual(await b.listItems(scope),[]);
 });

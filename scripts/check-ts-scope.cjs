@@ -23,6 +23,10 @@ const typescript = [
 const lintedJavaScript = [
   "lib/query-time.cjs",
   "tests/query-time.test.cjs",
+  "benchmark/writer-luna/proxy-384.cjs",
+  "benchmark/writer-luna/run.cjs",
+  "benchmark/writer-luna/r2-render.cjs",
+  "tests/writer-luna.test.cjs",
   "benchmark/harness-e2e/codex/find-contract.cjs",
   "benchmark/harness-e2e/codex/read-contract.cjs",
   "benchmark/harness-e2e/dsh/bounded-contract.cjs",

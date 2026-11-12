@@ -1,0 +1,5 @@
+{"type":"session","version":1,"id":"candidate-v2-case-01","createdAt":"2026-04-08T08:30:00.000Z","cwd":"/synthetic/writer-candidate-holdout","isSeeded":false,"delegationDepth":0}
+{"type":"turn/start","seq":1,"time":"2026-04-08T08:30:01.000Z","data":{"turn":"turn-case-01"}}
+{"type":"user/message","seq":2,"time":"2026-04-08T08:30:02.000Z","data":{"id":"user-case-01","turn":"turn-case-01","role":"user","text":"我决定后续使用「灰鹭」版展签。归档原图由我负责。文件尚未归档，计划明天完成。"}}
+{"type":"assistant/message","seq":3,"time":"2026-04-08T08:30:03.000Z","data":{"id":"assistant-case-01","turn":"turn-case-01","role":"assistant","text":"收到。"}}
+{"type":"turn/end","seq":4,"time":"2026-04-08T08:30:04.000Z","data":{"turn":"turn-case-01"}}

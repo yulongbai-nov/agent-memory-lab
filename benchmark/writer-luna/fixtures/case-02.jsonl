@@ -1,0 +1,5 @@
+{"type":"session","version":1,"id":"candidate-v2-case-02","createdAt":"2026-04-08T08:30:00.000Z","cwd":"/synthetic/writer-candidate-holdout","isSeeded":false,"delegationDepth":0}
+{"type":"turn/start","seq":1,"time":"2026-04-08T08:30:01.000Z","data":{"turn":"turn-case-02"}}
+{"type":"user/message","seq":2,"time":"2026-04-08T08:30:02.000Z","data":{"id":"user-case-02","turn":"turn-case-02","role":"user","text":"展签的编号格式是已登记的待定议题。我提议用两位数字，目前没有最终选择。"}}
+{"type":"assistant/message","seq":3,"time":"2026-04-08T08:30:03.000Z","data":{"id":"assistant-case-02","turn":"turn-case-02","role":"assistant","text":"收到。"}}
+{"type":"turn/end","seq":4,"time":"2026-04-08T08:30:04.000Z","data":{"turn":"turn-case-02"}}

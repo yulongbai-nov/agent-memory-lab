@@ -322,3 +322,102 @@ test("task selection and exact notes agree across JSON and SQLite", async (t) =>
     archive.close?.();
   }
 });
+
+test("review page rendering keeps dependency order and separate task histories", async () => {
+  const scope = { owner: "synthetic", project: "render" },
+    source = { harness: "dsh", instance: "test", session: "one" },
+    record = {
+      scope,
+      source,
+      versionId: "v",
+      item: {
+        id: "item",
+        kind: "message",
+        text: "native",
+        metadata: { topic: "T", reviewed: true, kind: "decision" },
+      },
+    },
+    target = { id: "item", revision: "v", source },
+    review = (id, kind) => ({ id, kind, text: id, topic: "T", target, scope }),
+    decision = review("decision", "decision"),
+    first = review("first", "todo"),
+    second = review("second", "todo"),
+    state = (id, root, value, parents) => ({
+      id,
+      kind: "task-state",
+      taskRoot: { kind: "annotation", id: root },
+      state: value,
+      parents,
+      text: id,
+      evidenceKind: "operator",
+      recordedAt: "2026-01-01T00:00:00Z",
+      target,
+      scope,
+    });
+  const dependencies = [
+    { id: "note-b", kind: "annotation", text: "B", target, scope },
+    {
+      id: "correction-b",
+      kind: "correction",
+      text: "B",
+      revises: "decision",
+      target,
+      scope,
+    },
+    state("start", "first", "open", []),
+    state("other", "second", "completed", []),
+    { id: "note-a", kind: "annotation", text: "A", target, scope },
+    state("finish", "first", "completed", ["start"]),
+    {
+      id: "correction-a",
+      kind: "correction",
+      text: "A",
+      revises: "decision",
+      target,
+      scope,
+    },
+    state("pause", "first", "paused", ["start"]),
+  ];
+  let currentDependencies = dependencies;
+  const archive = {
+    backend: "sqlite",
+    listItems: async () => [record],
+    getItem: async () => record,
+    reviewedHistoryPage: async () => ({
+      entries: [null, decision, first, second].map((annotation) => ({
+        record,
+        annotation,
+      })),
+      dependencies: currentDependencies,
+      next: null,
+    }),
+  };
+  const query = createQuery(archive),
+    args = { ...scope, topic: "T" };
+  const rows = (await query.reviewedTimelinePage(args)).rows;
+  assert.deepEqual(
+    rows[0].annotations.map((x) => x.id),
+    ["note-b", "note-a"],
+  );
+  assert.deepEqual(
+    rows[1].annotations.map((x) => x.id),
+    ["correction-b", "correction-a"],
+  );
+  assert.equal(rows[2].task_state.state, "conflict");
+  assert.deepEqual(
+    rows[2].task_state.heads.map((x) => x.id),
+    ["finish", "pause"],
+  );
+  assert.equal(rows[3].task_state.state, "completed");
+  assert.deepEqual(
+    rows[3].task_state.heads.map((x) => x.id),
+    ["other"],
+  );
+  currentDependencies = Array(1);
+  const sparse = (await query.reviewedTimelinePage(args)).rows;
+  assert.deepEqual(sparse[0].annotations, []);
+  assert.deepEqual(sparse[1].annotations, []);
+  assert.equal(sparse[2].task_state.state, "unmarked");
+  currentDependencies = [undefined];
+  await assert.rejects(query.reviewedTimelinePage(args), TypeError);
+});

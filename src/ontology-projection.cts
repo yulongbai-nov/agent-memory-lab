@@ -94,6 +94,7 @@ type Projection = {
     text: string;
     targetEvidence: SourceRevision;
     evidence: SourceRevision | null;
+    invalidEvidence?: SourceRevision;
     effectiveTimeKnown: false;
   }[];
 };
@@ -294,21 +295,21 @@ async function rebuildProjection({
       )
         throw new Error("Correction target mismatch");
       const evidence = r.evidence ? (await resolve(r.evidence)).ref : null;
-      if (
+      const nonIndependent = Boolean(
         evidence &&
         evidence.id === target.id &&
         evidence.revision === target.revision &&
         evidence.source.harness === target.source.harness &&
         evidence.source.instance === target.source.instance &&
-        evidence.source.session === target.source.session
-      )
-        throw new Error("Correction evidence is not independent");
+        evidence.source.session === target.source.session,
+      );
       corrections.push({
         id: r.id,
         target: prior.id,
         text: r.text,
         targetEvidence: target,
-        evidence,
+        evidence: nonIndependent ? null : evidence,
+        ...(nonIndependent && evidence ? { invalidEvidence: evidence } : {}),
         effectiveTimeKnown: false,
       });
       edges.push({
@@ -316,7 +317,7 @@ async function rebuildProjection({
         id: r.id,
         from: r.id,
         to: prior.id,
-        ...(evidence ? { evidence } : {}),
+        ...(!nonIndependent && evidence ? { evidence } : {}),
       });
     } else {
       const change = nodeMap.get(r.id);
@@ -515,6 +516,11 @@ function answerDependency({
   if (corrections.length > 1)
     return { status: "ambiguous", reason: "multiple corrections" };
   const correction = corrections[0];
+  if (correction?.invalidEvidence)
+    return {
+      status: "ambiguous",
+      reason: "correction evidence is not independent",
+    };
   const relevantDependencies = projection.edges
     .filter((e) => e.kind === "DEPENDS_ON" && e.to === root.id)
     .filter((e) => {

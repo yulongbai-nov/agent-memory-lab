@@ -1,7 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { mkdtemp, readdir, readFile, rm } = require("node:fs/promises");
+const { mkdtemp, readdir, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const test = require("node:test");
@@ -11,7 +11,6 @@ const originals = require("../lib/originals.cjs");
 const { migrateJsonToSqlite } = require("../lib/storage-sqlite.cjs");
 
 const scope = { owner: "synthetic", project: "recovery" };
-const otherScope = { owner: "synthetic", project: "other" };
 const source = { harness: "dsh", instance: "fixture", session: "one" };
 const oldTime = "2025-01-01T00:00:00Z";
 const newTime = "2026-01-01T00:00:00Z";
@@ -75,22 +74,6 @@ async function fixture(t) {
       archive.close?.();
       await migrateJsonToSqlite({ dir });
       archive = await openArchive({ dir });
-    },
-    item(id) {
-      return archive.getItem({ ...scope, source, id });
-    },
-    async drafts() {
-      const folder = join(dir, "local-derive");
-      const names = (await readdir(folder)).filter((name) =>
-        name.endsWith(".txt"),
-      );
-      return Promise.all(
-        names.map((name) => readFile(join(folder, name), "utf8")),
-      );
-    },
-    async assertNoReviewWrites() {
-      assert.deepEqual(await archive.listAnnotations(scope), []);
-      assert.deepEqual(await archive.listAnnotations(otherScope), []);
     },
   };
 }
@@ -189,4 +172,51 @@ test("unfinished fixed fence returns before selection or runner", async (t) => {
   assert.equal(progress.fence, 122);
   assert.equal(read("candidateProgress"), null);
   db.close();
+});
+
+test("every newly eligible turn receives candidate time after its fence is indexed", async (t) => {
+  const f = await fixture(t),
+    attempts = [];
+  await f.append([
+    await f.message(
+      "seed",
+      "seed",
+      "Next step: prepare synthetic item zero.",
+      oldTime,
+    ),
+    f.terminal("seed", oldTime),
+  ]);
+  await f.migrate();
+  const runner = {
+      async prepareLocalModel() {
+        return { fingerprint: "stub" };
+      },
+      async runLocalLlama({ prompt }) {
+        attempts.push(JSON.parse(prompt.split("\n").at(-1)).map((x) => x.text));
+        return { output: '{"candidates":[]}', stats: {} };
+      },
+    },
+    opts = { dir: f.dir, ...scope };
+  let elapsed = 0;
+  t.mock.method(performance, "now", () => {
+    const value = elapsed;
+    elapsed += 2500;
+    return value;
+  });
+  for (let i = 0; i < 4; i++) {
+    const expected =
+      i === 0
+        ? "Next step: prepare synthetic item zero."
+        : `Next step: prepare synthetic item ${i}.`;
+    if (i)
+      await f.append([
+        await f.message("task-" + i, "task-" + i, expected, newTime),
+        f.terminal("task-" + i, newTime),
+      ]);
+    elapsed = 0;
+    const result = await runLocalDerive(opts, runner);
+    assert.equal(result.status, "validated");
+    assert.equal(result.modelCalls, 1);
+    assert.deepEqual(attempts[i], [expected]);
+  }
 });

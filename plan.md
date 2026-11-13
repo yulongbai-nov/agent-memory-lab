@@ -34,6 +34,8 @@
 
 OpenViking 启发的分层装包已完成本地零模型合成对照。两组共用话题搜索，Top-5 均为 7/8。分层组充分证据从 6/8 到 7/8，保留两条冲突依据，序列化上下文少 13.7%。采用为独立基准，常规入口待独立留出及固定读者复验。 [实验结果](benchmark/memory-views/README.md#staged-context-packing-experiment) · [采用决定](spec/design-decisions.md#分层上下文装包)
 
+MemoraX Code 启发的代码库证据入口可从本机指定 Git 提交读取并核对精确文件片段。后续再把项目绑定、Git 证据持久化及受审阅的仓库地图接入 Graph + Wiki。 [研究、用法与采用边界](spec/research/memorax-reuse.md)
+
 Graph + Wiki 当前迭代已用一个跨 Harness 合成案例验证项目和主题入口、决定变更、待办及精确来源。测试禁用 service worker，不证明新的离线能力；未调用模型。[查询契约提案](spec/graph-wiki-contract-v0.1.md) · [验收场景](benchmark/graph-wiki/README.md)
 
 来源分页使用 SQLite 话题索引，每页返回 20 条精确版本引用。审核历史单独保留决定和任务状态。合成浏览器用例遍历多页，核对跨 Harness 引用及原档完整性。 [分页契约](spec/graph-wiki-contract-v0.1.md#分页来源与审核历史)

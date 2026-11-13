@@ -4,10 +4,12 @@
 const { parseArgs } = require('node:util');
 const { readFile } = require('node:fs/promises');
 const { randomUUID } = require('node:crypto');
+const escapeTerminalControls = json => json.replace(/[\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4,'0'));
 
 const options = Object.fromEntries([
   'split', 'dir', 'owner', 'project', 'keyword', 'from', 'to', 'limit', 'id', 'revision', 'format', 'receipt', 'receipt-sha256', 'expect-latest', 'review-id', 'primary',
   'source', 'file', 'instance', 'session', 'max-records', 'batch-size', 'port', 'first-coordinate', 'last-coordinate', 'expect-snapshot',
+  'commit', 'path', 'first-line', 'last-line', 'expect-blob',
   'kind', 'text', 'manifest', 'target', 'evidence', 'task-root', 'parents', 'state', 'evidence-kind', 'occurred-at', 'topic', 'offset', 'couch-url', 'root', 'sync-mode', 'max-sessions', 'basis', 'lifecycle', 'revises', 'interval', 'runs', 'valid-time', 'serve-origin', 'serve-tailnet-user'
 ].map(name => [name, { type: 'string' }]));
 options.synthetic = { type: 'boolean' };
@@ -30,6 +32,7 @@ Commands:
   timeline --topic TOPIC [--from DATE] [--to DATE]
   current --topic TOPIC
   evidence --id ID --revision VERSION --source dsh|codex --instance INSTANCE --session SESSION
+  repo-evidence --root REPO --commit GIT_OID --path FILE --first-line N --last-line N [--expect-blob GIT_OID]
   verify-original --id ID --revision VERSION
   original-coverage --source dsh|codex --instance ARCHIVED_INSTANCE --session ARCHIVED_SESSION
                     --first-coordinate N --last-coordinate N [--expect-snapshot SHA256]
@@ -128,6 +131,22 @@ async function main() {
   const [command, ...extra] = positionals;
   if (values.help || !command) return usage();
   if (extra.length) throw new Error('Unexpected positional argument.');
+  if (command === 'repo-evidence') {
+    const required = ['root', 'commit', 'path', 'first-line', 'last-line'];
+    const allowed = [...required, 'expect-blob'];
+    const provided = tokens.filter(token => token.kind === 'option').map(token => token.name);
+    if (new Set(provided).size !== provided.length || provided.some(key => !allowed.includes(key)) || required.some(key => !values[key])) throw new Error('Invalid repo-evidence arguments');
+    const { readRepoEvidence } = require('../lib/generated/repo-evidence.cjs');
+    const result = await readRepoEvidence({
+      root: values.root, commit: values.commit, path: values.path,
+      firstLine: positiveInt(values['first-line'], Number.MAX_SAFE_INTEGER),
+      lastLine: positiveInt(values['last-line'], Number.MAX_SAFE_INTEGER),
+      expectBlob: values['expect-blob']
+    });
+    console.log(escapeTerminalControls(JSON.stringify(result, null, 2)));
+    return;
+  }
+  if (['commit','path','first-line','last-line','expect-blob'].some(key => values[key] !== undefined)) throw new Error('Git evidence options are only supported by repo-evidence');
   if (command === 'training-eval-requests' || command === 'training-eval-score') {
     if (values.synthetic !== true || tokens.filter(token => token.kind === 'option' && token.name === 'synthetic').length !== 1 ||
         Object.keys(values).some(key => key !== 'synthetic')) throw new Error('Invalid synthetic evaluation input');
@@ -314,11 +333,11 @@ async function main() {
   const json = JSON.stringify(result, null, 2);
   // Opt-in preview may contain literal archive text. Escape additional terminal
   // controls on the wire while preserving exact text after JSON parsing.
-  console.log(command === 'find' && values.preview ? json.replace(/[\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4,'0')) : json);
+  console.log(command === 'find' && values.preview ? escapeTerminalControls(json) : json);
 }
 
 main().catch(error => {
-  const safe = ['CORRECTION_EFFECTIVE_TIME','ARCHIVE_NOT_FOUND'].includes(error.code) || /^(Select a project|Provide a source|Invalid numeric|Unexpected positional|CouchDB sync is unavailable|Unknown command)/.test(error.message);
+  const safe = ['CORRECTION_EFFECTIVE_TIME','ARCHIVE_NOT_FOUND','REPO_EVIDENCE'].includes(error.code) || /^(Select a project|Provide a source|Invalid numeric|Invalid repo-evidence arguments|Git evidence options|Unexpected positional|CouchDB sync is unavailable|Unknown command)/.test(error.message);
   console.error(safe ? error.message : 'Memory operation failed. Check the scope, inputs, and local service configuration.');
   process.exitCode = 1;
 });

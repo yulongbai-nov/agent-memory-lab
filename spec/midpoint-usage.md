@@ -6,7 +6,9 @@
 
 宿主安装使用 Node.js 24.22.1 和 `npm ci --ignore-scripts && npm run build`。DSH 压缩记录包含连续 Zstandard 帧，导入器在读取前验证解码能力。CouchDB 可以在容器里运行。两端的持久化文件导入可以离线执行。公开合成协议回放使用独立 CLI 和模拟提供方，带预算的真实模型验收另有入口。宿主会话、Remote Host 和手机状态见[完成计划](../plan.md)。
 
-运行 `node bin/memory.cjs --help` 查看命令。本机 SQLite 迁移、旧档和回退出口见 [本机索引 ADR](adr-local-sqlite-index.md)。普通查询以只读方式打开已有档案。每条命令都用 `--project` 选定项目，`--owner` 默认 `local`。不同设备应使用不同的 `--dir` 和不同实例标识。目录和归档分别使用 0700 和 0600 权限。CLI 的 `evidence` 会返回所请求归档版本的脱敏投影和原件可用性。使用 `verify-original` 在本机校验原件摘要。私有查询结果留在获准的运行范围。
+运行 `node bin/memory.cjs --help` 查看命令。本机 SQLite 迁移、旧档和回退出口见 [本机索引 ADR](adr-local-sqlite-index.md)。普通查询以只读方式打开已有档案。归档操作用 `--project` 选定项目，`--owner` 默认 `local`。不同设备应使用不同的 `--dir` 和不同实例标识。目录和归档分别使用 0700 和 0600 权限。CLI 的 `evidence` 会返回所请求归档版本的脱敏投影和原件可用性。使用 `verify-original` 在本机校验原件摘要。私有查询结果留在获准的运行范围。
+
+`repo-evidence` 从显式指定的本地 Git 工作树读取固定提交、文件和行范围。返回原文与可复核的 blob ID 和片段摘要，适合对照代码库文档和决定。 [代码库证据用法](research/memorax-reuse.md#本机-git-证据入口)
 
 本机可显式使用 `find --preview` 查看候选的归档消息片段与同版引用；默认 CLI 和 MCP 输出不变。片段不是语义总结，也不验证原件当前可读，详见[预览边界](find-preview-v0.1.md)。`--from`、`--to` 传入纯日期时使用 UTC 日界，网页日期控件使用浏览器本地日界，见[时间语义](query-time.md)。
 

@@ -166,6 +166,43 @@ async function main() {
       join(work, filename),
     ]);
     const installed = join(prefix, "node_modules", "agent-memory-lab");
+    const repo = join(work, "repository");
+    await fs.mkdir(repo);
+    const git = (...args) => run("git", ["-C", repo, ...args]).trim();
+    git("init", "-q");
+    await fs.writeFile(join(repo, "guide.md"), "Frozen repository evidence.\n");
+    git("add", "guide.md");
+    git(
+      "-c",
+      "user.name=Synthetic",
+      "-c",
+      "user.email=synthetic@example.invalid",
+      "commit",
+      "-qm",
+      "Fixture evidence",
+    );
+    const commit = git("rev-parse", "HEAD");
+    const evidence = JSON.parse(
+      run(process.execPath, [
+        join(installed, "bin", "memory.cjs"),
+        "repo-evidence",
+        "--root",
+        repo,
+        "--commit",
+        commit,
+        "--path",
+        "guide.md",
+        "--first-line",
+        "1",
+        "--last-line",
+        "1",
+      ]),
+    );
+    assert.equal(evidence.text, "Frozen repository evidence.\n");
+    assert.equal(
+      evidence.reference.blob,
+      git("rev-parse", `${commit}:guide.md`),
+    );
     assert.equal(existsSync(join(prefix, "node_modules", "typescript")), false);
     const training = JSON.parse(
       run(process.execPath, [

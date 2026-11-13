@@ -542,11 +542,12 @@ const citedBy = (row) => [row.target, row.evidence].filter(Boolean);
 function packEvidence(sources, records) {
   const handles = sources.map((source) => source.ref);
   return {
-    sources: sources.map(({ ref, time, text, scope }) => ({
+    sources: sources.map(({ ref, time, text, scope, excerpt }) => ({
       ref,
       time,
       text,
       scope,
+      ...(excerpt && { excerpt }),
     })),
     reviews: records
       .filter(
@@ -569,17 +570,14 @@ function packEvidence(sources, records) {
         knownAt: row.knownAt ?? null,
         ...(row.basis && { basis: row.basis }),
         ...(row.lifecycle && { lifecycle: row.lifecycle }),
+        ...(row.state && { state: row.state }),
       })),
   };
 }
-function selectEvidence(
+function rankEvidence(
   question,
   rows,
-  {
-    scope: selectedScope = scope,
-    topic: selectedTopic = topic,
-    limits = retrievalBudget,
-  } = {},
+  { scope: selectedScope = scope, topic: selectedTopic = topic } = {},
 ) {
   const words = terms(question.text);
   for (const word of terms(selectedTopic)) words.delete(word);
@@ -616,6 +614,12 @@ function selectEvidence(
     .sort(
       (a, b) => b.score - a.score || a.source.ref.localeCompare(b.source.ref),
     );
+  return { ranked, records };
+}
+
+function selectEvidence(question, rows, options = {}) {
+  const { limits = retrievalBudget } = options;
+  const { ranked, records } = rankEvidence(question, rows, options);
   const selected = [];
   const pack = (sources) => packEvidence(sources, records);
   for (const { source } of ranked) {
@@ -1265,6 +1269,8 @@ if (require.main === module) {
   });
 }
 module.exports = {
+  rankEvidence,
+  packEvidence,
   selectEvidence,
   seed,
   makeCorpus,

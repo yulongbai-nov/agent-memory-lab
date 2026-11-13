@@ -44,6 +44,8 @@ jobs:
           fi
       - name: Verify deterministic bounded memory retrieval (no model)
         run: npm run check:memory-retrieval
+      - name: Check staged context packing
+        run: npm run benchmark:staged-context
       - name: Verify packaged production CLI and MCP
         run: npm run smoke:package
       - name: Verify product sync and protected roles

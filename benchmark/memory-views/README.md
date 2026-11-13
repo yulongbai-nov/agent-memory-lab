@@ -52,3 +52,21 @@ node benchmark/memory-views/paired-alias-live.cjs --preflight \
 The command refuses an existing output file. It checks that alias reversal reconstructs all eight original forwarded bodies and that isolated oracle substitutions and per-case leak controls behave as expected. The optional original result file remains accepted only at its pinned hash. This receipt reproduces request parity, not any model answer, usage record, real-network delivery, or claim of statistical improvement. A live run is separate and explicitly enabled; the proxy records only safe outgoing-body hashes, and a missing or mismatched hash stops later slots.
 
 The source-result hash in the baseline receipt identifies the earlier long-reference synthetic result. The later short-reference model trial was performed with commit `8b7d446ebc18354f478d04d5664e2c2ed2da6809`; this packaging change was not used in that trial. A fresh preflight verifies request equivalence only and does not recreate or modify either historical result.
+
+## Staged context packing experiment
+
+Run `npm run build` then `npm run --silent benchmark:staged-context`. The command creates a temporary synthetic archive, migrates it to SQLite, reopens it read-only and runs the real scoped `find`, `topicSources`, `evidence`, `reviewedTimeline` and `current` queries. It needs no external service or model.
+
+Both arms share one `find` result of up to five topics, the same selected topic, candidate source revisions and review records, the same serialization, and a cap of three source versions and 1,900 UTF-8 bytes per context. The fixture selects the target topic only if it is present among the five returned candidates. This measures target-topic availability. The staged arm additionally uses the case's explicit request kind and, where supplied, effective time to choose a group of required reviewed evidence. It packs that group intact and drops optional material. For unreviewed material, it can start with a bounded query-matched sentence and add complete text if it fits. Every excerpt carries its UTF-16 range and exact version, and the runner checks it against the same stored source text. A required group that is missing or cannot fit yields a gap and an empty context.
+
+| Result on the synthetic fixture | Existing lexical packing | Staged packing |
+| --- | ---: | ---: |
+| Target topic among the first five, eight questions with known targets | 7/8 | 7/8 |
+| All required source versions with required text, end to end | 6/8 | 7/8 |
+| Exact expected evidence set, end to end | 3/8 | 7/8 |
+| Confirmed conflict reviews included, one conflict | 2/2 | 2/2 |
+| Serialized context bytes across all nine questions | 6,654 | 5,740 |
+
+The staged arm reduced context bytes by 914 (13.7%). The long-source case retained the answer-bearing sentence at its exact position. The historical case omitted a later source that the lexical baseline included. Both arms missed the broad topic query, and both returned no source for the absent topic. The exact-set score penalizes extra references even when they are valid. Both arms' emitted references were checked against scoped revisions. Negative checks cover oversize or missing required evidence, duplicate references, ambiguity without source evidence and a foreign-project version collision. Two fresh runs matched when timings were excluded.
+
+The experiment evaluates retrieval and packing, with no model-answer, prompt token, runtime rollout or general multilingual recall claim. Reviewed state is an input to staged selection. The fixture supplies intent and topic selection, so this does not evaluate automatic intent inference. [Adoption decision](../../spec/design-decisions.md#分层上下文装包)

@@ -32,6 +32,8 @@
 
 短迭代优先验证正常用户路径。每轮从 CLI、Harness 或网页选一个真实入口，跑到可观察的结果并核对精确来源。独立实现、文档和验收可由 Terra 并行处理，主代理负责依赖、合并与最终证据。优先复用现有测试，在来源版本、作用域和评分边界保留必要的拒绝案例。 [协作规范](AGENTS.md#协作提交与交付)
 
+OpenViking 启发的分层装包已完成本地零模型合成对照。两组共用话题搜索，Top-5 均为 7/8。分层组充分证据从 6/8 到 7/8，保留两条冲突依据，序列化上下文少 13.7%。采用为独立基准，常规入口待独立留出及固定读者复验。 [实验结果](benchmark/memory-views/README.md#staged-context-packing-experiment) · [采用决定](spec/design-decisions.md#分层上下文装包)
+
 Graph + Wiki 当前迭代已用一个跨 Harness 合成案例验证项目和主题入口、决定变更、待办及精确来源。测试禁用 service worker，不证明新的离线能力；未调用模型。[查询契约提案](spec/graph-wiki-contract-v0.1.md) · [验收场景](benchmark/graph-wiki/README.md)
 
 来源分页使用 SQLite 话题索引，每页返回 20 条精确版本引用。审核历史单独保留决定和任务状态。合成浏览器用例遍历多页，核对跨 Harness 引用及原档完整性。 [分页契约](spec/graph-wiki-contract-v0.1.md#分页来源与审核历史)

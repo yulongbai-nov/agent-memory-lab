@@ -29,6 +29,7 @@
     "src/collector.cts",
     "src/legacy-input-binding.cts",
     "src/query-time.cts",
+    "src/staged-context-packing.cts",
     "src/graph-wiki-view.cts",
     "src/graph-wiki-browser.cts",
     "src/repair-original.cts",

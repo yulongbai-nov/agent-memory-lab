@@ -36,6 +36,8 @@ OpenViking 启发的分层装包已完成本地零模型合成对照。两组共
 
 MemoraX Code 启发的代码库证据入口可从本机指定 Git 提交读取并核对精确文件片段。后续再把项目绑定、Git 证据持久化及受审阅的仓库地图接入 Graph + Wiki。 [研究、用法与采用边界](spec/research/memorax-reuse.md)
 
+Writer 的原生 Codex／DSH 回合准入已接入候选选择。零模型合成回放验证原件保留、检查点重启、重复终止、打断、事件缺口和插件注入排除。真实资料和模型质量另行验收。 [准入与恢复契约](spec/local-draft-recovery.md#native-writer-eligibility)
+
 Graph + Wiki 当前迭代已用一个跨 Harness 合成案例验证项目和主题入口、决定变更、待办及精确来源。测试禁用 service worker，不证明新的离线能力；未调用模型。[查询契约提案](spec/graph-wiki-contract-v0.1.md) · [验收场景](benchmark/graph-wiki/README.md)
 
 来源分页使用 SQLite 话题索引，每页返回 20 条精确版本引用。审核历史单独保留决定和任务状态。合成浏览器用例遍历多页，核对跨 Harness 引用及原档完整性。 [分页契约](spec/graph-wiki-contract-v0.1.md#分页来源与审核历史)

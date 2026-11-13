@@ -15,6 +15,12 @@
 
 - 项目工作页与知识主题页平级，可视化是正式需求；关系图选 Cytoscape.js、时间线选 vis-timeline，优先复用组件。首轮已接入，并通过跨 Harness 合成浏览器路径验证；真实性能、无障碍和真实资料仍需验收。 [Graph + Wiki](graph-wiki-design.md)
 
+### 分层上下文装包
+
+将分层装包纳入本地检索基准。先用现有话题查询返回最多五个候选，选中后再打包证据。已复核的决定、纠正和任务状态优先使用完整依据，同一冲突的证据成组交付。遇到缺失或预算不足时显示缺口。未复核材料可提供带精确版本及位置的原文片段。原始归档与复核账本继续提供事实和状态依据。该选择借鉴 OpenViking 的逐层装包方式，由本项目的归档和查询接口实现。 [OpenViking 预算实现](https://github.com/volcengine/OpenViking/blob/51f0e8e262060e95a897e8480fa9fa47652f75ed/openviking/retrieve/context_assembler/budget.py) · [合成 A/B](../benchmark/memory-views/README.md#staged-context-packing-experiment)
+
+常规入口启用前，先接入真实用户路径，复测模糊提示、复核关系跨话题、多个并发分支和更大档案，再用固定 Luna low 验证答案及实际 token。当前实验的显式意图只由夹具提供。
+
 ## 仍开放
 
 - 决定何时形成可复用经验或候选 Skill，如何独立审核、批准、发布、撤销及回退。全面语义质量与自动采纳规则尚未确定。

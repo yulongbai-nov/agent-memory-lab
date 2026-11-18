@@ -6,3 +6,16 @@
 - Report only safe wait duration, sample count and final percentage plus an explicit internal inference-started flag. Keep the latter distinct from a model call count: admission failure remains zero inference even when metrics exist. No prompt, model path, process command, weights or private contents enter the report. Existing 25% running pressure, RSS and output protections remain unchanged.
 
 Synthetic acceptance covers persistent low pressure, recovery, exact threshold, invalid/failed samples, cancellation before and during wait, exhausted overall deadline, model/executable/config changes, and no spawn when checks fail. Tests use injected stubs and fixture files only, not the production model or private data.
+
+## Daily deferral diagnostics
+
+For a retryable `MEMORY_ADMISSION` result with an explicit zero model-call count,
+`daily` and its `derived/local-draft-*.json` status include `localDraftAdmission`.
+It contains `requiredPercent` (45, shared with the admission gate), an optional
+validated `lastPercent` (0–100), and fixed `nextStep` guidance to wait for resource
+availability and retry through the existing daily workflow without lowering the
+threshold. Missing or invalid samples remain unknown. Other failures, unknown
+call counts, and subsequent successful runs do not carry this diagnostic.
+This is a resource deferral, not evidence that collection failed or that reviewed
+knowledge exists. Collection, candidate generation, and explicit review remain
+separate stages. No schedule or inference behavior is changed.

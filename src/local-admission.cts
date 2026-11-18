@@ -1,5 +1,7 @@
 "use strict";
 
+const REQUIRED_PERCENT = 45;
+
 type Status = "admitted" | "low" | "unavailable" | "timeout" | "cancelled";
 type Outcome = {
   status: Status;
@@ -86,7 +88,7 @@ async function waitForAdmission({
       return result("unavailable");
     lastPercent = value;
     if (waitLimitMs > 0 && at >= waitDeadline) return result("low");
-    if (value >= 45) return result("admitted");
+    if (value >= REQUIRED_PERCENT) return result("admitted");
     if (at >= waitDeadline) return result("low");
     const delay = Math.min(intervalMs, waitDeadline - at, deadline - at);
     if (delay <= 0) return result(at >= deadline ? "timeout" : "low");
@@ -98,4 +100,37 @@ async function waitForAdmission({
     }
   }
 }
-module.exports = { waitForAdmission };
+type AdmissionDiagnostic = {
+  requiredPercent: number;
+  lastPercent?: number;
+  nextStep: string;
+};
+
+function admissionDiagnostic(draft: unknown): AdmissionDiagnostic | undefined {
+  if (!draft || typeof draft !== "object") return undefined;
+  const value = draft as Record<string, unknown>;
+  if (
+    value.status !== "retryable" ||
+    value.reason !== "MEMORY_ADMISSION" ||
+    value.modelCalls !== 0
+  )
+    return undefined;
+  const stats = value.stats;
+  const percent =
+    stats && typeof stats === "object"
+      ? (stats as Record<string, unknown>).admissionLastPercent
+      : undefined;
+  return {
+    requiredPercent: REQUIRED_PERCENT,
+    ...(typeof percent === "number" &&
+    Number.isFinite(percent) &&
+    percent >= 0 &&
+    percent <= 100
+      ? { lastPercent: percent }
+      : {}),
+    nextStep:
+      "Wait for resource availability, then retry through the existing daily workflow. Keep the admission threshold unchanged.",
+  };
+}
+
+module.exports = { waitForAdmission, admissionDiagnostic };

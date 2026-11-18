@@ -1,12 +1,21 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const { spawn } = require("node:child_process");
-const { mkdtemp, readdir, rm, writeFile } = require("node:fs/promises");
+const { spawn, execFileSync } = require("node:child_process");
+const {
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 const test = require("node:test");
-const { waitForAdmission } = require("../lib/generated/local-admission.cjs");
+const {
+  waitForAdmission,
+  admissionDiagnostic,
+} = require("../lib/generated/local-admission.cjs");
 const { openArchive } = require("../lib/archive.cjs");
 const { runLocalDerive } = require("../lib/local-derive.cjs");
 const { originalCapture } = require("../lib/originals.cjs");
@@ -445,3 +454,136 @@ test(
     assert.equal(plain.signal, "SIGTERM");
   },
 );
+
+test("daily resource deferral diagnostics survive persistence without private data", async (t) => {
+  const { dailyReview } = require("../lib/daily.cjs");
+  const dir = await mkdtemp(join(tmpdir(), "synthetic-daily-admission-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const op = {
+    dir,
+    scope: { owner: "synthetic", project: "admission" },
+    archive: {
+      dir,
+      listVersionSummaries: async () => [],
+      listAnnotations: async () => [],
+      listItems: async () => [],
+    },
+    find: async () => ({ topics: [] }),
+    current: async () => [],
+  };
+  const draft = {
+    status: "retryable",
+    reason: "MEMORY_ADMISSION",
+    modelCalls: 0,
+    stats: {
+      admissionLastPercent: 32,
+      admissionSamples: 15,
+      admissionWaitMs: 15000,
+      privateText: "SECRET",
+    },
+    privateText: "SECRET",
+  };
+  const run = async (value) =>
+    dailyReview(op, [], async () => ({ itemsImported: 0 }), {
+      localDraft: true,
+      localDraftRunner: async () => value,
+    });
+  const result = await run(draft);
+  assert.equal(result.localModelCalls, 0);
+  assert.equal(result.externalModelCalls, 0);
+  assert.equal(result.localDraftReason, "MEMORY_ADMISSION");
+  assert.equal(result.localDraftAdmission.requiredPercent, 45);
+  assert.equal(result.localDraftAdmission.lastPercent, 32);
+  assert.match(result.localDraftAdmission.nextStep, /threshold unchanged/);
+  const file = join(
+    dir,
+    "derived",
+    (await readdir(join(dir, "derived"))).find((name) =>
+      name.startsWith("local-draft-"),
+    ),
+  );
+  const saved = JSON.parse(await readFile(file, "utf8"));
+  assert.deepEqual(saved.localDraftAdmission, result.localDraftAdmission);
+  assert.equal(saved.localModelCalls, 0);
+  assert.ok(!JSON.stringify(result).includes("SECRET"));
+  assert.ok(!JSON.stringify(saved).includes("SECRET"));
+  for (const percent of [undefined, null, "32", -1, 101, Infinity, NaN]) {
+    assert.equal(
+      Object.hasOwn(
+        admissionDiagnostic({
+          ...draft,
+          stats: { admissionLastPercent: percent },
+        }),
+        "lastPercent",
+      ),
+      false,
+    );
+  }
+  for (const value of [
+    null,
+    {},
+    { ...draft, modelCalls: 1 },
+    { ...draft, modelCalls: undefined },
+    { ...draft, reason: "MEMORY_UNAVAILABLE" },
+    { ...draft, status: "validated" },
+  ]) {
+    assert.equal(admissionDiagnostic(value), undefined);
+  }
+  const recovered = await run({ status: "validated", modelCalls: 1 });
+  assert.equal(Object.hasOwn(recovered, "localDraftAdmission"), false);
+  assert.equal(
+    Object.hasOwn(
+      JSON.parse(await readFile(file, "utf8")),
+      "localDraftAdmission",
+    ),
+    false,
+  );
+});
+
+test("daily CLI reports resource deferral using only a synthetic runner", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "synthetic-daily-diagnostic-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const preload = join(dir, "preload.cjs");
+  const manifest = join(dir, "manifest.json");
+  await writeFile(manifest, "[]");
+  await writeFile(
+    preload,
+    `
+    const Module = require("node:module");
+    const load = Module._load;
+    Module._load = function(request, parent, ...rest) {
+      if (request === "../lib/local-derive.cjs" && parent.filename.endsWith("/bin/memory.cjs")) {
+        return { runLocalDerive: async () => ({ status: "retryable", reason: "MEMORY_ADMISSION", modelCalls: 0,
+          stats: { admissionLastPercent: 32, admissionWaitMs: 15000, admissionSamples: 15 } }) };
+      }
+      if (request.includes("local-llama")) throw Error("Unexpected inference access");
+      return load.call(this, request, parent, ...rest);
+    };
+  `,
+  );
+  const result = JSON.parse(
+    execFileSync(
+      process.execPath,
+      [
+        "--require",
+        preload,
+        join(__dirname, "../bin/memory.cjs"),
+        "daily",
+        "--dir",
+        join(dir, "archive"),
+        "--owner",
+        "synthetic",
+        "--project",
+        "admission",
+        "--manifest",
+        manifest,
+        "--local-draft",
+      ],
+      { encoding: "utf8", timeout: 10000 },
+    ),
+  );
+  assert.equal(result.localDraftReason, "MEMORY_ADMISSION");
+  assert.equal(result.localModelCalls, 0);
+  assert.equal(result.localDraftAdmission.requiredPercent, 45);
+  assert.equal(result.localDraftAdmission.lastPercent, 32);
+});
